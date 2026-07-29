@@ -6,6 +6,10 @@ it needs, and **when** it will need it, from open data.
 Built for Başakşehir municipality (İstanbul) as an internship project, with full ISO/IEC
 330xx (SPICE) process documentation.
 
+> **Status.** Design is complete and baselined. The scoring module is implemented and
+> tested; the data pipeline, AI service and interface are not built yet. See
+> [Current state](#current-state).
+
 ---
 
 ## The problem
@@ -54,6 +58,12 @@ determine the number of clusters from the data itself, so the cluster count is f
 configuration and a silhouette score is reported on every run. If separation turns out to be
 weak, that is reported as a finding rather than hidden.
 
+**Second known limitation:** the projection is a linear trend, so it cannot anticipate step
+changes such as a new housing development coming online. One neighborhood also has a shorter
+population series than the rest, and it happens to be the same outlier that anchors the
+bottom of the exposure scale. Its projection is treated separately rather than averaged in
+as if it were as well-supported as the others.
+
 ## Architecture
 
 ```
@@ -88,6 +98,24 @@ date, this was a precondition for adding the AI layer at all.
 | Map and charts | Leaflet, Recharts |
 | Deployment | Static build; AI service deployed separately |
 
+## Current state
+
+| Component | State |
+|---|---|
+| Scoring module | **Implemented.** Pure TypeScript, no DOM, network or file access. 15 unit tests covering hazard, exposure scaling, risk, simulation and budget-constrained selection |
+| Data preparation script | Not started. Data sources verified, see below |
+| AI service | Not started |
+| Interface (map, priority list, simulation) | Not started |
+| IoT sensor network | Phase 2, deliberately not implemented |
+
+```bash
+cd web && npm install && npm test
+```
+
+The scoring module is deliberately the first thing built and the only place the formulas
+live. Neither the preparation script nor the AI service reimplements them, so there is no
+second copy to drift out of sync.
+
 ## Process documentation
 
 What distinguishes this project is not the map, it is the process behind it. Every decision
@@ -101,21 +129,22 @@ raw need       requirement       architecture      test case
 
 | Document | Process | Contents |
 |---|---|---|
-| [Project definition](docs/01-project-definition.md) | Project initiation | Scope, phase split, model rationale |
-| [Requirements elicitation](docs/02-requirements-elicitation.md) | ENG.1 | 10 raw needs, approval gate, privacy assessment |
-| [Baseline agreement](docs/03-baseline-agreement.md) | ENG.1 BP4 | Scope agreement recorded before implementation |
-| [Requirements analysis](docs/04-requirements-analysis.md) | ENG.4 | 31 requirements, acceptance criteria, actors and use cases |
-| [Architecture design](docs/05-architecture-design.md) | ENG.5 | 10 components, layer model, interface contracts |
-| [Project management](docs/06-project-management.md) | MAN.3, MAN.5 | Plan, ownership, 12-item risk register |
-| [Test plan](docs/07-test-plan.md) | ENG.7, ENG.8 | 34 test cases, traceability matrix |
-| [Configuration management](docs/08-configuration-management.md) | SUP.8, ENG.6, SPL.2 | Version discipline, coding standard, release package |
+| Project definition | Project initiation | Scope, phase split, model rationale |
+| Requirements elicitation | ENG.1 | 10 raw needs, approval gate, privacy assessment |
+| Baseline agreement | ENG.1 BP4 | Scope agreement recorded before implementation |
+| Requirements analysis | ENG.4 | 31 requirements, acceptance criteria, actors and use cases |
+| Architecture design | ENG.5 | 10 components, layer model, interface contracts |
+| Project management | MAN.3, MAN.5 | Plan, ownership, 13-item risk register |
+| Test plan | ENG.7, ENG.8 | 34 test cases, traceability matrix |
+| Configuration management | SUP.8, ENG.6, SPL.2 | Version discipline, coding standard, release package |
 
 **Traceability matrix: 31/31.** Every requirement maps to at least one test case. A gap
 anywhere in the chain means one of two things: a requirement nobody tests, or a feature
 nobody asked for.
 
-These documents are also compiled into a single formal process report, which is delivered to
-the municipality and not published here.
+These documents are written in Turkish and compiled into a single formal process report
+delivered to the municipality. Neither the documents nor the report are published in this
+repository; this repository holds the system's source.
 
 ## Scope
 
@@ -134,6 +163,27 @@ person-level vulnerability data.
 |---|---|
 | Neighborhood boundaries, green cover, buildings | OpenStreetMap via Overpass API |
 | Population and historical series | TurkStat address-based population registration system |
+
+Both sources were verified against live data before any pipeline code was written. Three
+findings changed the design, and all three fail silently rather than loudly, which is why
+they were worth a day of checking:
+
+**Neighborhood boundaries are at `admin_level=8`, not `10`.** The common convention for
+Turkish neighborhoods is level 10. Querying level 10 for this district returns zero results
+and no error. Level 8 returns 11 polygons: the 10 residential neighborhoods plus the
+excluded industrial zone.
+
+**The `place` nodes are a trap.** Querying `place=suburb|quarter` returns 17 results, which
+looks better until you notice they are points, so no area ratio can be computed from them,
+and six of them are not official neighborhoods at all. A pipeline built on that source
+produces a plausible-looking wrong answer.
+
+**Historical population must be joined on TurkStat's numeric code, not the name.**
+Neighborhood names changed over the years while their codes did not: `40357` was *Esenler
+Başakşehir* in 2008 and is *Başak* today, and *Bahçeşehir 1./2. Kısım* were recorded without
+the *Bahçeşehir* prefix. Joining a time series by name breaks 4 of the 10 neighborhoods,
+leaving gaps that quietly distort the projection. The series itself runs 2008 to 2025; it
+cannot start earlier because the district was founded in 2008.
 
 OpenStreetMap data is licensed under the **Open Database License (ODbL)**, which carries an
 attribution requirement. The derived dataset falls under the same terms. The interface
