@@ -18,8 +18,8 @@
       "2024": 1248,
       "2025": 1245
     },
-    "yesil_alan_orani": 1.0,
-    "bina_yogunlugu": 0.0036203122844486926,
+    "yesil_alan_orani": 0.07225798054676998,
+    "bina_yogunlugu": 0.0036352600507996505,
     "sinir": {
       "type": "MultiPolygon",
       "coordinates": [
@@ -1440,8 +1440,8 @@
       "2024": 70658,
       "2025": 71065
     },
-    "yesil_alan_orani": 0.8552523461865307,
-    "bina_yogunlugu": 0.0228865316320367,
+    "yesil_alan_orani": 0.6808060775852627,
+    "bina_yogunlugu": 0.02296925387700001,
     "sinir": {
       "type": "MultiPolygon",
       "coordinates": [
@@ -2554,8 +2554,8 @@
       "2024": 31210,
       "2025": 31877
     },
-    "yesil_alan_orani": 0.27457529129154795,
-    "bina_yogunlugu": 0.05888331619130015,
+    "yesil_alan_orani": 0.24665536759999893,
+    "bina_yogunlugu": 0.058082340029912846,
     "sinir": {
       "type": "MultiPolygon",
       "coordinates": [
@@ -3476,8 +3476,8 @@
       "2024": 71244,
       "2025": 72735
     },
-    "yesil_alan_orani": 0.3483861145537518,
-    "bina_yogunlugu": 0.07498574941784314,
+    "yesil_alan_orani": 0.33420372886201954,
+    "bina_yogunlugu": 0.07453276056093629,
     "sinir": {
       "type": "MultiPolygon",
       "coordinates": [
@@ -3886,8 +3886,8 @@
       "2024": 76217,
       "2025": 79017
     },
-    "yesil_alan_orani": 0.39983958953282683,
-    "bina_yogunlugu": 0.10523942428121846,
+    "yesil_alan_orani": 0.37307201577820354,
+    "bina_yogunlugu": 0.10523523908225389,
     "sinir": {
       "type": "MultiPolygon",
       "coordinates": [
@@ -4860,8 +4860,8 @@
       "2024": 26909,
       "2025": 29367
     },
-    "yesil_alan_orani": 0.17970046670662757,
-    "bina_yogunlugu": 0.1669211593053212,
+    "yesil_alan_orani": 0.09385577423810212,
+    "bina_yogunlugu": 0.16686159533635617,
     "sinir": {
       "type": "MultiPolygon",
       "coordinates": [
@@ -5182,8 +5182,8 @@
       "2024": 112367,
       "2025": 118479
     },
-    "yesil_alan_orani": 0.1594722904368661,
-    "bina_yogunlugu": 0.07164466018059157,
+    "yesil_alan_orani": 0.14493864722370206,
+    "bina_yogunlugu": 0.07137808440904939,
     "sinir": {
       "type": "MultiPolygon",
       "coordinates": [
@@ -6672,8 +6672,8 @@
       "2024": 31567,
       "2025": 31117
     },
-    "yesil_alan_orani": 0.4506242802176321,
-    "bina_yogunlugu": 0.0253198984785306,
+    "yesil_alan_orani": 0.23687051700514847,
+    "bina_yogunlugu": 0.025314246282873935,
     "sinir": {
       "type": "MultiPolygon",
       "coordinates": [
@@ -8010,7 +8010,7 @@
       "2024": 61602,
       "2025": 63770
     },
-    "yesil_alan_orani": 0.14651529971529345,
+    "yesil_alan_orani": 0.14638162033345994,
     "bina_yogunlugu": 0.08073008124464083,
     "sinir": {
       "type": "MultiPolygon",
@@ -8937,7 +8937,7 @@
   },
   {
     "ad": "Bahcesehir 1. Kisim",
-    "alan_km2": 8.306729222888235,
+    "alan_km2": 8.306845379550287,
     "nufus": 37997,
     "nufus_serisi": {
       "2007": 7594,
@@ -8960,8 +8960,8 @@
       "2024": 37332,
       "2025": 37997
     },
-    "yesil_alan_orani": 0.08179711165209523,
-    "bina_yogunlugu": 0.051162357075200345,
+    "yesil_alan_orani": 0.08174076856655871,
+    "bina_yogunlugu": 0.05116164165937771,
     "sinir": {
       "type": "MultiPolygon",
       "coordinates": [
@@ -9360,8 +9360,8 @@
               41.0735689
             ],
             [
-              28.691766,
-              41.072823
+              28.691735,
+              41.072833
             ],
             [
               28.6910923,
