@@ -1,0 +1,41 @@
+# Oturum notlari, depoya girmez
+HANDOFF-*.md
+
+# Staj teslim paketi: yerelde tutulur, public depoya gonderilmez.
+# SPICE surec dokumantasyonu Turkce ve kuruma ozeldir; public depo
+# kodu ve Ingilizce README'yi barindirir.
+00-proje-tanimi/
+01-gereksinimler/
+02-tasarim/
+03-proje-yonetimi/
+04-test/
+05-konfigurasyon-yonetimi/
+rapor-uret.js
+SPICE-Raporu-*.docx
+gorseller/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Node / arayuz
+node_modules/
+web/dist/
+web/.vite/
+*.log
+
+# Ortam degiskenleri
+.env
+.env.*
+!.env.example
+
+# Office gecici kilit dosyalari
+~$*
+
+# Isletim sistemi
+Thumbs.db
+.DS_Store
+desktop.ini
