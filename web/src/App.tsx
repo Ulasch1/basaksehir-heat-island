@@ -16,6 +16,8 @@ import {
 } from './skorHesapla';
 import { simuleYesilAlan, simuleNufus, secBudceKisitli } from './skor';
 import type { MahalleGirdi, TehlikeAgirliklari } from './skor';
+import { izgaraGetir, type IzgaraHucre } from './veriKaynagi';
+import { hesaplaHucreTehlikeleri } from './skorHesapla';
 import Harita from './bilesenler/Harita';
 import OncelikListesi from './bilesenler/OncelikListesi';
 import DetayPaneli from './bilesenler/DetayPaneli';
@@ -38,6 +40,11 @@ export default function App() {
   const [simYesil, setSimYesil] = useState(0);
   const [simNufusYuzde, setSimNufusYuzde] = useState(0);
   const [simButce, setSimButce] = useState(3);
+
+  const [izgaraGoster, setIzgaraGoster] = useState(false);
+  const [izgaraVeri, setIzgaraVeri] = useState<{ ad: string; hucreler: IzgaraHucre[] } | null>(null);
+  const [izgaraYukleniyor, setIzgaraYukleniyor] = useState(false);
+  const [izgaraHata, setIzgaraHata] = useState<string | null>(null);
 
   useEffect(() => {
     let iptalEdildi = false;
@@ -68,6 +75,35 @@ export default function App() {
       iptalEdildi = true;
     };
   }, [veriKaynagi]);
+
+  // Izgara verisi yukleme (lazy)
+  useEffect(() => {
+    let iptalEdildi = false;
+    if (!izgaraGoster || !seciliAd) {
+      setIzgaraHata(null);
+      return;
+    }
+    setIzgaraYukleniyor(true);
+    setIzgaraHata(null);
+    (async () => {
+      try {
+        const hucreler = await izgaraGetir(seciliAd);
+        if (iptalEdildi) return;
+        setIzgaraVeri({ ad: seciliAd, hucreler });
+      } catch (e) {
+        if (!iptalEdildi) {
+          setIzgaraHata(e instanceof Error ? e.message : 'Izgara verisi yuklenirken hata olustu');
+        }
+      } finally {
+        if (!iptalEdildi) {
+          setIzgaraYukleniyor(false);
+        }
+      }
+    })();
+    return () => {
+      iptalEdildi = true;
+    };
+  }, [izgaraGoster, seciliAd]);
 
   // ---------- Türetilmiş değerler (useMemo) ----------
 
@@ -169,6 +205,14 @@ export default function App() {
     }),
     [],
   );
+
+  const izgaraKatmani = useMemo(() => {
+    if (!izgaraGoster || !izgaraVeri || izgaraVeri.ad !== seciliAd || izgaraVeri.hucreler.length === 0) {
+      return null;
+    }
+    const tehlikeler = hesaplaHucreTehlikeleri(izgaraVeri.hucreler, agirliklar);
+    return { ad: izgaraVeri.ad, hucreler: izgaraVeri.hucreler, tehlikeler };
+  }, [izgaraGoster, izgaraVeri, seciliAd, agirliklar]);
 
   const yesilSimSonuc = useMemo(() => {
     if (!seciliMahalle || !seciliSkor) return null;
@@ -291,6 +335,7 @@ export default function App() {
           seciliAd={seciliAd}
           onSecim={onSecim}
           butceSecilenAdlari={butceSecilenAdlari}
+          izgaraKatmani={izgaraKatmani}
         />
 
         <div className="flex flex-col gap-4 min-h-0 overflow-y-auto pr-1">
@@ -320,6 +365,10 @@ export default function App() {
               projeksiyon={seciliProjeksiyon}
               projeksiyonRiski={seciliProjeksiyonRiski}
               projeksiyonGuncelDegil={projeksiyonGuncelDegil}
+              izgaraGoster={izgaraGoster}
+              onIzgaraGosterChange={setIzgaraGoster}
+              izgaraYukleniyor={izgaraYukleniyor}
+              izgaraHata={izgaraHata}
             />
           )}
 

@@ -155,3 +155,16 @@ export function tehlikeRiskUyusmazliginiBul(skorlar: MahalleSkoru[]): TehlikeRis
 
   return { uyusmuyor: enYuksekTehlikeAd !== enYuksekRiskAd, enYuksekTehlikeAd, enYuksekRiskAd };
 }
+
+/**
+ * Verilen hucreler icin hesaplaTehlike ciktilarini hesaplar,
+ * ayni sirada sayi dizisi dondurur.
+ */
+export function hesaplaHucreTehlikeleri(
+  hucreler: { yesil_alan_orani: number; bina_yogunlugu: number }[],
+  agirliklar: TehlikeAgirliklari
+): number[] {
+  return hucreler.map((h) =>
+    hesaplaTehlike(h.yesil_alan_orani, h.bina_yogunlugu, agirliklar)
+  );
+}

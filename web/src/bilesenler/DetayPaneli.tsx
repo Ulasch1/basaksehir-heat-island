@@ -20,6 +20,10 @@ interface DetayPaneliProps {
   projeksiyon: { tahminiNufus: number; hedefYil: number } | null;
   projeksiyonRiski: { tehlike: number; maruziyet: number; risk: number } | null;
   projeksiyonGuncelDegil: boolean;
+  izgaraGoster: boolean;
+  onIzgaraGosterChange: (deger: boolean) => void;
+  izgaraYukleniyor: boolean;
+  izgaraHata: string | null;
 }
 
 function buildChartData(
@@ -63,6 +67,10 @@ export default function DetayPaneli({
   projeksiyon,
   projeksiyonRiski,
   projeksiyonGuncelDegil,
+  izgaraGoster,
+  onIzgaraGosterChange,
+  izgaraYukleniyor,
+  izgaraHata,
 }: DetayPaneliProps) {
   const yesilEksikligi = (1 - mahalle.yesil_alan_orani) * 100;
   const binaYuzde = mahalle.bina_yogunlugu * 100;
@@ -81,6 +89,24 @@ export default function DetayPaneli({
           <span className="font-mono text-xs text-muted">
             Öncelik {rank} / {toplamMahalle}
           </span>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 mb-3">
+        <label className="flex items-center gap-1.5 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            className="w-3.5 h-3.5 accent-ink"
+            checked={izgaraGoster}
+            onChange={(e) => onIzgaraGosterChange(e.target.checked)}
+          />
+          <span className="text-[11px] text-muted">Mahalle içi ısı haritası göster</span>
+        </label>
+        {izgaraYukleniyor && (
+          <span className="text-[10px] text-muted">Yükleniyor…</span>
+        )}
+        {izgaraHata && (
+          <span className="text-[10px] text-red-600">{izgaraHata}</span>
         )}
       </div>
 

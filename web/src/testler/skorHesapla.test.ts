@@ -3,8 +3,10 @@ import {
   hesaplaMevcutSkorlar,
   hesaplaProjeksiyonRiski,
   tehlikeRiskUyusmazliginiBul,
+  hesaplaHucreTehlikeleri,
 } from '../skorHesapla';
 import type { MahalleVeri, SkorAyarlari } from '../skorHesapla';
+import type { TehlikeAgirliklari } from '../skor';
 
 // Sabit ayar objesi (ayarlar.json ile ayni yapi)
 const VARSAYILAN_AYARLAR: SkorAyarlari = {
@@ -166,5 +168,40 @@ describe('skorHesapla modul testleri', () => {
     expect(sonuc.uyusmuyor).toBe(false);
     expect(sonuc.enYuksekTehlikeAd).toBeNull();
     expect(sonuc.enYuksekRiskAd).toBeNull();
+  });
+});
+
+describe('hesaplaHucreTehlikeleri', () => {
+  const agirliklar: TehlikeAgirliklari = { yesilAlan: 0.5, binaYogunlugu: 0.5 };
+
+  it('birden fazla hucre icin hesaplaTehlike ile dogru degerler uretir', () => {
+    const hucreler = [
+      { yesil_alan_orani: 0.2, bina_yogunlugu: 0.8 },
+      { yesil_alan_orani: 0.6, bina_yogunlugu: 0.4 },
+    ];
+    const sonuclar = hesaplaHucreTehlikeleri(hucreler, agirliklar);
+    // Hucre 1: (0.5*(1-0.2)+0.5*0.8) = 0.8
+    // Hucre 2: (0.5*(1-0.6)+0.5*0.4) = 0.4
+    expect(sonuclar).toHaveLength(2);
+    expect(sonuclar[0]).toBeCloseTo(0.8, 5);
+    expect(sonuclar[1]).toBeCloseTo(0.4, 5);
+  });
+
+  it('bos dizi girdisinde bos dizi doner', () => {
+    const sonuclar = hesaplaHucreTehlikeleri([], agirliklar);
+    expect(sonuclar).toEqual([]);
+  });
+
+  it('cikti sirasi girdi sirasiyla aynidir', () => {
+    const hucreler = [
+      { yesil_alan_orani: 0.1, bina_yogunlugu: 0.9 },
+      { yesil_alan_orani: 0.5, bina_yogunlugu: 0.5 },
+      { yesil_alan_orani: 0.9, bina_yogunlugu: 0.1 },
+    ];
+    const sonuclar = hesaplaHucreTehlikeleri(hucreler, agirliklar);
+    // degerler: [0.9, 0.5, 0.1]
+    expect(sonuclar[0]).toBeCloseTo(0.9, 5);
+    expect(sonuclar[1]).toBeCloseTo(0.5, 5);
+    expect(sonuclar[2]).toBeCloseTo(0.1, 5);
   });
 });
