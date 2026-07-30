@@ -3,13 +3,17 @@
 ARC-01 Veri Hazırlama Betiği
 Başakşehir ilçesinin 10 konut mahallesi için:
 - OSM Overpass API'den sınır poligonu, yeşil alan oranı ve bina yoğunluğu ölçümü yapar.
+- Yerleşim zarfı (REQ-F-24) kullanarak payda olarak mahalle alanı yerine zarf alanını kullanır.
 - TÜİK nüfus verisiyle birleştirir (veri/nufus.json, sadece okunur, değiştirilmez).
 - AI servisine (ARC-05) tek seferlik çağrı yapmayı dener ve sonucu ai_onbellek alanına yazar.
 - veri/veri.json çıktısını atomik olarak üretir.
+- Overpass ham yanıtlarını `veri/.onbellek/` altında önbelleğe alır.
 
 BU BETİK SKOR HESAPLAMAZ. Tehlike, maruziyet, risk formülleri ARC-04'tedir.
 """
 
+import argparse
+import hashlib
 import json
 import os
 import sys
@@ -154,12 +158,44 @@ def geometri_alani_m2(geom_4326, transformer: pyproj.Transformer) -> float:
     return projekte.area
 
 
-def overpass_sorgula(sorgu: str, deneme_sayisi: int = 5) -> dict:
+def overpass_sorgula(sorgu: str, deneme_sayisi: int = 5, onbellek_yok: bool = False) -> dict:
     """
     Overpass API'ye sorgu gönderir, aynalı sunucular arasında geçiş yapar,
-    artan beklemeyle yeniden dener. Tüm denemeler başarısız olursa
-    anlaşılır bir hata mesajıyla RuntimeError fırlatır (REQ-F-15).
+    artan beklemeyle yeniden dener. Ham JSON yanıtlarını veri/.onbellek/ altında
+    önbelleğe alır, böylece tekrar çalıştırmalarda ağ çağrısı yapılmaz.
+    Tüm denemeler başarısız olursa anlaşılır bir hata mesajıyla RuntimeError
+    fırlatır (REQ-F-15).
     """
+    onbellek_dizini = os.path.join("veri", ".onbellek")
+    sorgu_hash = hashlib.sha256(sorgu.encode("utf-8")).hexdigest()
+    onbellek_dosya = os.path.join(onbellek_dizini, f"{sorgu_hash}.json")
+
+    # Önbellek kontrolü
+    if not onbellek_yok:
+        if os.path.exists(onbellek_dosya):
+            try:
+                with open(onbellek_dosya, "r", encoding="utf-8") as f:
+                    onbellek_veri = json.load(f)
+                cekilme_zamani_str = onbellek_veri["cekilme_zamani"]
+                cekilme_zamani = datetime.fromisoformat(cekilme_zamani_str)
+                simdi = datetime.now(timezone.utc)
+                fark = simdi - cekilme_zamani
+                if fark.days > 0:
+                    yas_aciklamasi = f"{fark.days} gun"
+                elif fark.seconds >= 3600:
+                    yas_aciklamasi = f"{fark.seconds // 3600} saat"
+                else:
+                    dakika = max(1, fark.seconds // 60)
+                    yas_aciklamasi = f"{dakika} dakika"
+                print(
+                    f"    Onbellekten okunuyor (cekilme: {cekilme_zamani_str}, {yas_aciklamasi} once)",
+                    file=sys.stderr,
+                )
+                return onbellek_veri["yanit"]
+            except Exception as e:
+                print(f"    Onbellek dosyasi okunamadi ({e}), yeniden aga gidiliyor.", file=sys.stderr)
+
+    # Ağ denemeleri
     son_hatalar = []
     for deneme in range(deneme_sayisi):
         for sunucu in MIRROR_SUNUCULAR:
@@ -171,7 +207,28 @@ def overpass_sorgula(sorgu: str, deneme_sayisi: int = 5) -> dict:
                     timeout=280,  # sorgu icindeki en yuksek [timeout:N] degerinden buyuk olmali
                 )
                 if resp.status_code == 200:
-                    return resp.json()
+                    try:
+                        yanit_veri = resp.json()
+                    except Exception as e:
+                        hata_msj = f"Sunucu {sunucu}: JSON ayrıştırma hatası ({e})"
+                        son_hatalar.append(hata_msj)
+                        print(f"    Deneme {deneme + 1}/{deneme_sayisi}: {hata_msj}",
+                              file=sys.stderr)
+                        continue
+
+                    # Başarılı yanıtı önbelleğe yaz (onbellek_yok olsa da yaz)
+                    try:
+                        os.makedirs(onbellek_dizini, exist_ok=True)
+                        onbellek_icerik = {
+                            "cekilme_zamani": datetime.now(timezone.utc).isoformat(),
+                            "yanit": yanit_veri,
+                        }
+                        with open(onbellek_dosya, "w", encoding="utf-8") as f:
+                            json.dump(onbellek_icerik, f, ensure_ascii=False, indent=2)
+                    except Exception as e:
+                        print(f"UYARI: Onbellek dosyasina yazilamadi: {e}", file=sys.stderr)
+
+                    return yanit_veri
                 else:
                     # HTTP != 200 (504, 429 vs.) yeniden denenecek
                     hata_msj = f"Sunucu {sunucu}: HTTP {resp.status_code}"
@@ -212,30 +269,63 @@ def osm_to_geometri(data: dict) -> object:
         return shape(gj["geometry"])
 
 
+def ayarlari_yukle() -> float:
+    """
+    web/src/ayarlar.json dosyasindan yerlesim zarfi tampon yaricapini (R metre) okur.
+    Dosya veya anahtar mevcut degilse acik bir hata basar, cagiran main()'in
+    return 1 ile durmasi beklenir.
+    """
+    ayar_yolu = os.path.join("web", "src", "ayarlar.json")
+    try:
+        with open(ayar_yolu, "r", encoding="utf-8") as f:
+            ayarlar = json.load(f)
+    except Exception as e:
+        raise RuntimeError(f"ayarlar.json dosyasi okunamadi: {e}")
+
+    r_metre = ayarlar.get("yerlesim_zarfi_r_metre")
+    if r_metre is None:
+        raise RuntimeError("ayarlar.json icinde 'yerlesim_zarfi_r_metre' anahtari bulunamadi")
+    if not isinstance(r_metre, (int, float)) or r_metre <= 0:
+        raise RuntimeError("yerlesim_zarfi_r_metre pozitif bir sayi olmalidir")
+    return float(r_metre)
+
+
+def yerlesim_zarfi_hesapla(bina_geometrileri: list, sinir_geom_m2, r_metre: float):
+    """
+    Bina poligonlarini (EPSG:32635) r_metre buffer ile tamponlar, birlesimini alir,
+    mahalle siniriyla keser. Zarf geometrisini dondurur.
+    bina_geometrileri bossa bos bir Polygon dondurur.
+    """
+    if not bina_geometrileri:
+        return Polygon()
+    tum_binalar = unary_union(bina_geometrileri)
+    tamponlanmis = tum_binalar.buffer(r_metre)
+    zarf = tamponlanmis.intersection(sinir_geom_m2)
+    return zarf
+
+
 def bina_yesil_oranlari_hesapla(
     geojson_fc: dict,
     mahalle_alani_m2: float,
     transformer: pyproj.Transformer,
-    sinir_geom_m2,  # EPSG:32635'te mahalle siniri poligonu (shapely geometri)
-) -> Tuple[float, float]:
+    sinir_geom_m2,  # EPSG:32635'te mahalle siniri poligonu
+    r_metre: float,
+) -> Tuple[float, float, float]:
     """
     Overpass'tan dönen bina/yesil alan FeatureCollection'ini isler.
 
-    Her geometri (bina ve yesil, agac tamponu dahil) projekte edildikten sonra
-    mahalle sinirina (`sinir_geom_m2`) kirpilir. Bunun sebebi: Overpass'in
-    `(area.m)` filtresi, sinirin bir kismi iceride olan nesnelerin TAM
-    geometrisini döndürür; kirpma yapilmazsa sinir disindaki kisim hatali
-    bicimde alan hesabina katilir.
+    Artik payda mahalle alani degil, yerlesim zarfidir (REQ-F-24).
+    Zarf, bina poligonlarinin bufffer, birlesim ve sinirla kesilmesiyle
+    olusturulur. Yesil alan orani ve bina yogunlugu zarf alanina oranlanir.
 
-    Bina alanlari kirpildiktan sonra toplanir. Yesil alanlar (poligonlar ve
-    agac tac tamponlari) cakisabildigi icin once kirpilir, sonra unary_union
-    ile birlestirilip birlesimin alani kullanilir.
+    Dönüş: (bina_orani, yesil_orani, zarf_alani_m2)
+    Sifir zarf alani durumunda ValueError firlatir.
     """
     if mahalle_alani_m2 <= 0:
-        return 0.0, 0.0
+        return 0.0, 0.0, 0.0
 
-    bina_alani_toplam = 0.0
-    yesil_geometriler = []  # projekte edilmis (EPSG:32635) poligonlar, union icin
+    bina_geometrileri_ham = []  # ham projekte bina poligonlari (kırpılmamış)
+    yesil_geometrileri_ham = []  # ham projekte yesil poligonlar (kırpılmamış)
 
     for feature in geojson_fc.get("features", []):
         try:
@@ -248,14 +338,11 @@ def bina_yesil_oranlari_hesapla(
             if shapely_geom is None or shapely_geom.is_empty:
                 continue
 
-            # Dogal=tree node: nokta geometrisi, alan yok, tampon uygula
+            # Dogal=tree node: tamponla, kırpma henüz yapılmaz
             if geom["type"] == "Point" and tags.get("natural") == "tree":
                 projekte = transform(transformer.transform, shapely_geom)
                 tampon = projekte.buffer(AGAC_TAC_YARICAPI_M)
-                kirpilmis = tampon.intersection(sinir_geom_m2)
-                if kirpilmis.is_empty:
-                    continue
-                yesil_geometriler.append(kirpilmis)
+                yesil_geometrileri_ham.append(tampon)
                 continue
 
             # Polygon veya MultiPolygon olmayan geometriler sessizce atlanir
@@ -263,32 +350,57 @@ def bina_yesil_oranlari_hesapla(
                 continue
 
             projekte = transform(transformer.transform, shapely_geom)
-            kirpilmis = projekte.intersection(sinir_geom_m2)
-            if kirpilmis.is_empty:
-                continue
 
-            # Gruplandirma
+            # Gruplandirma – simdi sadece biriktir, kırpma sonra
             if tags.get("building") is not None:
-                bina_alani_toplam += kirpilmis.area
+                bina_geometrileri_ham.append(projekte)
             elif yesil_etiket_mi(tags):
-                yesil_geometriler.append(kirpilmis)
+                yesil_geometrileri_ham.append(projekte)
             # Digerleri gormezden gelinir
 
         except Exception as e:
             print(f"    UYARI: bir feature islenemedi, atlaniyor: {e}", file=sys.stderr)
             continue
 
-    if yesil_geometriler:
-        # Cakisan yesil poligonlarin (park + icindeki cimenlik, agac + park govdesi gibi)
-        # alani iki kez sayilmasin diye birlesim aliniyor, ham toplam degil.
-        yesil_birlesimi = unary_union(yesil_geometriler)
-        yesil_alani_toplam = yesil_birlesimi.area
+    # Bina birlesimi ve sinir icindeki alan (çakışmaları önlemek için union)
+    if bina_geometrileri_ham:
+        bina_birlesimi = unary_union(bina_geometrileri_ham)
+        bina_birlesimi_sinir_ici = bina_birlesimi.intersection(sinir_geom_m2)
     else:
-        yesil_alani_toplam = 0.0
+        bina_birlesimi_sinir_ici = Polygon()
 
-    bina_orani = min(1.0, bina_alani_toplam / mahalle_alani_m2)
-    yesil_orani = min(1.0, yesil_alani_toplam / mahalle_alani_m2)
-    return bina_orani, yesil_orani
+    # Yerleşim zarfı
+    zarf_geom = yerlesim_zarfi_hesapla(bina_geometrileri_ham, sinir_geom_m2, r_metre)
+    zarf_alani_m2 = zarf_geom.area
+
+    if zarf_alani_m2 <= 0:
+        raise ValueError("zarf alani sifir, bina bulunamadi veya gecersiz zarf")
+
+    # Bina yogunlugu (zarf icindeki bina alani / zarf alani)
+    bina_orani_ham = bina_birlesimi_sinir_ici.intersection(zarf_geom).area / zarf_alani_m2
+
+    # Yesil alan orani
+    if yesil_geometrileri_ham:
+        yesil_birlesimi = unary_union(yesil_geometrileri_ham)
+        yesil_icerigi = yesil_birlesimi.intersection(zarf_geom)
+        yesil_orani_ham = yesil_icerigi.area / zarf_alani_m2
+    else:
+        yesil_orani_ham = 0.0
+
+    # Ham değerleri stderr'a yaz
+    print(
+        f"    [ham, kirpma oncesi] yesil={yesil_orani_ham:.6f} bina={bina_orani_ham:.6f}",
+        file=sys.stderr,
+    )
+    if bina_orani_ham > 1.0 + 1e-6 or yesil_orani_ham > 1.0 + 1e-6:
+        print(
+            "    UYARI: kirpma devreye girdi, oran 1.0'i asti, altta hesap hatasi olabilir",
+            file=sys.stderr,
+        )
+
+    bina_orani = min(1.0, bina_orani_ham)
+    yesil_orani = min(1.0, yesil_orani_ham)
+    return bina_orani, yesil_orani, zarf_alani_m2
 
 
 # ---------------------------------------------------------------------------
@@ -296,6 +408,26 @@ def bina_yesil_oranlari_hesapla(
 # ---------------------------------------------------------------------------
 
 def main():
+    parser = argparse.ArgumentParser(description="ARC-01 Veri Hazırlama Betiği")
+    parser.add_argument(
+        "--onbellek-yok",
+        action="store_true",
+        help="Overpass onbellegini yoksay, ham veriyi yeniden cek",
+    )
+    args = parser.parse_args()
+    onbellek_yok = args.onbellek_yok
+
+    # Yapılandırmayı yükle (yerleşim zarfı yarıçapı)
+    try:
+        r_metre = ayarlari_yukle()
+        print(
+            f"Yerlesim zarfi tampon yaricapi: {r_metre} m (kaynak: web/src/ayarlar.json)",
+            file=sys.stderr,
+        )
+    except Exception as e:
+        print(f"HATA: {e}", file=sys.stderr)
+        return 1
+
     print("ARC-01 Veri Hazırlama Betiği başlatılıyor...")
 
     # 1. Nüfus verisini yükle (sadece okuma)
@@ -323,7 +455,7 @@ def main():
         'out tags;'
     )
     try:
-        ilce_cevap = overpass_sorgula(ilce_sorgu)
+        ilce_cevap = overpass_sorgula(ilce_sorgu, onbellek_yok=onbellek_yok)
     except RuntimeError as e:
         print(f"HATA: İlçe sorgusu başarısız: {e}", file=sys.stderr)
         return 1
@@ -346,7 +478,7 @@ def main():
         'out tags;'
     )
     try:
-        mahalle_cevap = overpass_sorgula(mahalle_sorgu)
+        mahalle_cevap = overpass_sorgula(mahalle_sorgu, onbellek_yok=onbellek_yok)
     except RuntimeError as e:
         print(f"HATA: Mahalle sorgusu başarısız: {e}", file=sys.stderr)
         return 1
@@ -386,7 +518,7 @@ def main():
             'out geom;'
         )
         try:
-            sinir_veri = overpass_sorgula(sinir_sorgu)
+            sinir_veri = overpass_sorgula(sinir_sorgu, onbellek_yok=onbellek_yok)
         except RuntimeError as e:
             print(f"HATA: '{osm_ad}' sınır sorgusu başarısız: {e}", file=sys.stderr)
             return 1
@@ -406,10 +538,6 @@ def main():
         print(f"  Alan: {alan_km2:.2f} km²")
 
         # -- 5b. Bina ve yeşil alan sorgusu
-        # REQ-F-02: genisletilmis yesil etiket kumesi icin dinamik union sorgu
-        # type=multipolygon filtresi kaldırıldı: boundary=national_park gibi relation'lar
-        # type=boundary taşıyabiliyor, osm2geojson etiket beyaz listesi üzerinden bu
-        # relation'ları yine de poligona çeviriyor.
         yesil_sorgu_satirlari = []
         for anahtar, deger in YESIL_POLIGON_ETIKETLERI:
             yesil_sorgu_satirlari.append(f'  way["{anahtar}"="{deger}"](area.m);')
@@ -427,11 +555,8 @@ def main():
             ');\n'
             'out geom;'
         )
-        # Not: Samlar Tabiat Parki gibi birden fazla etiket tasiyan objeler
-        # Overpass union icinde type+id ile kumelendigi icin yalnizca bir kez
-        # gorunur. Python tarafinda ekstra dedup gerekmiyor.
         try:
-            bina_yesil_veri = overpass_sorgula(bina_yesil_sorgu)
+            bina_yesil_veri = overpass_sorgula(bina_yesil_sorgu, onbellek_yok=onbellek_yok)
         except RuntimeError as e:
             print(f"HATA: '{osm_ad}' bina/yeşil alan sorgusu başarısız: {e}", file=sys.stderr)
             return 1
@@ -443,10 +568,33 @@ def main():
             return 1
 
         sinir_geom_projekte = transform(transformer.transform, sinir_geom)
-        bina_orani, yesil_orani = bina_yesil_oranlari_hesapla(
-            gjson_fc, alan_m2, transformer, sinir_geom_projekte
-        )
+
+        # Sınır geçerlilik kontrolü (REQ-F-15, F-17)
+        if not sinir_geom_projekte.is_valid:
+            print(
+                f"  UYARI: '{osm_ad}' sinir geometrisi gecersiz, buffer(0) ile onarim deneniyor.",
+                file=sys.stderr,
+            )
+            sinir_geom_projekte = sinir_geom_projekte.buffer(0)
+        if sinir_geom_projekte.is_empty or not sinir_geom_projekte.is_valid:
+            print(
+                f"HATA: '{osm_ad}' sinir geometrisi onarilamadi (gecersiz veya bos). "
+                f"Betik durduruluyor.",
+                file=sys.stderr,
+            )
+            return 1
+
+        try:
+            bina_orani, yesil_orani, zarf_alani_m2 = bina_yesil_oranlari_hesapla(
+                gjson_fc, alan_m2, transformer, sinir_geom_projekte, r_metre
+            )
+        except ValueError as e:
+            print(f"HATA: '{osm_ad}' için yerlesim zarfi hesaplanamadi: {e}", file=sys.stderr)
+            return 1
+
         print(f"  Yeşil alan oranı: {yesil_orani:.3f}, Bina yoğunluğu: {bina_orani:.3f}")
+        zarf_alan_km2 = zarf_alani_m2 / 1e6
+        print(f"  Yerlesim zarfi alani: {zarf_alan_km2:.4f} km2")
 
         # -- 5c. Ad eşleştirme
         norm_osm = ad_normallestir(osm_ad)
@@ -460,18 +608,19 @@ def main():
         nufus_anahtar = nufus_norm_anahtarlar[norm_osm]
         nufus_kaydi = nufus_mahalleler[nufus_anahtar]
         nufus = nufus_kaydi["guncel"]
-        nufus_serisi = nufus_kaydi["seri"]  # olduğu gibi taşınır
+        nufus_serisi = nufus_kaydi["seri"]
 
         # -- 5d. Ölçülen değerler ve çıktı inşası
         mahalle_nesnesi = {
             "ad": nufus_anahtar,
             "alan_km2": alan_km2,
+            "zarf_alan_km2": zarf_alan_km2,
             "nufus": nufus,
             "nufus_serisi": nufus_serisi,
             "yesil_alan_orani": yesil_orani,
             "bina_yogunlugu": bina_orani,
             "sinir": sinir_gj,
-            "ai_onbellek": {}  # başlangıçta boş, AI çağrısı yapılabilirse doldurulacak
+            "ai_onbellek": {},
         }
         sonuclar.append(mahalle_nesnesi)
 
@@ -491,14 +640,11 @@ def main():
         # Tipoloji isteği
         tipoloji_girdi = []
         for m in sonuclar:
-            # Nüfus yoğunluğu ham (kişi/km²)
             nufus_yog_ham = m["nufus"] / m["alan_km2"] if m["alan_km2"] > 0 else 0
             tipoloji_girdi.append({
                 "ad": m["ad"],
                 "yesil_alan_orani": m["yesil_alan_orani"],
                 "bina_yogunlugu": m["bina_yogunlugu"],
-                # NOT: ARC-05/ARC-06 kablolaması tamamlandığında bu özellik,
-                # ARC-04'ün olcekleMaruziyet çıktısıyla değiştirilecek
                 "nufus_yogunlugu_ham": nufus_yog_ham,
             })
         tipoloji_resp = requests.post(
@@ -508,7 +654,6 @@ def main():
         )
         tipoloji_resp.raise_for_status()
         tipoloji_sonuc = tipoloji_resp.json()
-        # Beklenen şema: {"tipolojiler": {"ad": {"tipoloji": "..."}, ...}}
         tipler = tipoloji_sonuc.get("tipolojiler", {})
 
         # Projeksiyon isteği
@@ -522,10 +667,8 @@ def main():
         proj_sonuc = proj_resp.json()
         projeksiyonlar = proj_sonuc.get("projeksiyonlar", {})
 
-        # Zaman damgası
         uretim_zamani = datetime.now(timezone.utc).isoformat()
 
-        # Sonuçları ai_onbellek'e yaz
         for m in sonuclar:
             ad = m["ad"]
             ai = {}
@@ -537,14 +680,12 @@ def main():
                 ai["_uretim_zamani"] = uretim_zamani
                 ai["_servis_surumu"] = servis_surumu
                 m["ai_onbellek"] = ai
-            # else boş kalır (mahalle için AI sonucu yoksa)
         print(f"  AI çıktıları {len([m for m in sonuclar if m['ai_onbellek']])} mahalleye yazıldı.")
 
     except Exception as e:
         print(f"UYARI: AI Servisi'ne erişilemedi ({e}), "
               f"ai_onbellek alanı boş bırakıldı (REQ-F-23).",
               file=sys.stderr)
-        # Tüm ai_onbellek boş kalır (zaten boş başlatıldı)
 
     # 7. Atomik yazma
     cikti_yolu = os.path.join("veri", "veri.json")

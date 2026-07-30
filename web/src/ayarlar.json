@@ -1,0 +1,16 @@
+{
+  "tehlike_agirliklari": {
+    "yesil_alan": 0.5,
+    "bina_yogunlugu": 0.5
+  },
+  "simulasyon_bina_azaltma_katsayisi": 0.5,
+  "maruziyet_alt_siniri": 0.1,
+  "renk_esikleri": {
+    "dusuk": null,
+    "yuksek": null
+  },
+  "kumeleme_kume_sayisi": 3,
+  "projeksiyon_ufku_yil": 5,
+  "tipoloji_mudahale_eslemesi": {},
+  "yerlesim_zarfi_r_metre": 100
+}
