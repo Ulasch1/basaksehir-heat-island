@@ -26,6 +26,7 @@ veri/.onbellek/
 node_modules/
 web/dist/
 web/.vite/
+web/public/
 *.log
 
 # Ortam degiskenleri

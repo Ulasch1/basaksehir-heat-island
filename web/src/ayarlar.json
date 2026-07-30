@@ -11,6 +11,10 @@
   },
   "kumeleme_kume_sayisi": 3,
   "projeksiyon_ufku_yil": 5,
-  "tipoloji_mudahale_eslemesi": {},
+  "tipoloji_mudahale_eslemesi": {
+    "0": { "etiket": "Karma doku", "mudahale": "Sokak agaci yogunlastirma" },
+    "1": { "etiket": "Seyrek yapili", "mudahale": "Agaclandirma koridoru, uzun vadeli yatirim" },
+    "2": { "etiket": "Yogun yapili", "mudahale": "Cati bahcesi ve golgelik yapi, dikime alan sinirli" }
+  },
   "yerlesim_zarfi_r_metre": 100
 }
