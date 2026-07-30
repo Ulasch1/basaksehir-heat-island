@@ -417,5 +417,126 @@ class BinaYesilOranHesaplaTestleri(unittest.TestCase):
         self.assertIn("buffer(0)", kaynak)
 
 
+class OlcekleMaruziyetTestleri(unittest.TestCase):
+    """
+    olcekle_maruziyet() icin testler (QA tarafindan eklendi, bu fonksiyon
+    bu oturumda /tipoloji istegine dogru girdi saglamak icin eklendi).
+    web/src/skor.ts'teki olcekleMaruziyet'in Python karsiligi oldugu icin
+    davranisi ayni sekilde sinanir.
+    """
+
+    def test_bos_dizi_valueerror_firlatir(self):
+        with self.assertRaises(ValueError):
+            veri_topla.olcekle_maruziyet([], 0.1)
+
+    def test_tum_degerler_ayniysa_hepsi_bir_doner(self):
+        sonuc = veri_topla.olcekle_maruziyet([5.0] * 10, 0.1)
+        self.assertEqual(sonuc, [1.0] * 10)
+
+    def test_tek_eleman_bir_doner(self):
+        # max == min kosulu tek elemanli dizide de gecerlidir
+        sonuc = veri_topla.olcekle_maruziyet([42.0], 0.1)
+        self.assertEqual(sonuc, [1.0])
+
+    def test_min_alt_siniri_max_biri_alir(self):
+        sonuc = veri_topla.olcekle_maruziyet([10.0, 20.0, 30.0], 0.1)
+        self.assertAlmostEqual(sonuc[0], 0.1)
+        self.assertAlmostEqual(sonuc[-1], 1.0)
+
+    def test_orta_deger_dogrusal_olceklenir(self):
+        # min=10 -> 0.1, max=30 -> 1.0, orta 20 -> 0.55 (dogrusal enterpolasyon)
+        sonuc = veri_topla.olcekle_maruziyet([10.0, 20.0, 30.0], 0.1)
+        self.assertAlmostEqual(sonuc[1], 0.55)
+
+    def test_alt_sinir_sifirsa_min_sifir_olur(self):
+        sonuc = veri_topla.olcekle_maruziyet([100.0, 200.0], 0.0)
+        self.assertAlmostEqual(sonuc[0], 0.0)
+        self.assertAlmostEqual(sonuc[1], 1.0)
+
+
+class AyarlariYukleTestleri(unittest.TestCase):
+    """
+    ayarlari_yukle() icin testler (QA tarafindan eklendi). Gercek
+    web/src/ayarlar.json dosyasina karsi mutlu-yol dogrulamasi yapar;
+    hata yollari icin builtins.open mock'lanir.
+    """
+
+    def test_gercek_ayarlar_dosyasi_ile_dogru_deger_doner(self):
+        # Bu test repo kokunden calistirilmasini varsayar (python -m unittest veri.test_veri_topla)
+        r_metre, kume_sayisi, ufuk_yil, alt_sinir = veri_topla.ayarlari_yukle()
+        self.assertIsInstance(r_metre, float)
+        self.assertGreater(r_metre, 0)
+        self.assertIsInstance(kume_sayisi, int)
+        self.assertGreaterEqual(kume_sayisi, 2)
+        self.assertIsInstance(ufuk_yil, int)
+        self.assertGreaterEqual(ufuk_yil, 1)
+        self.assertIsInstance(alt_sinir, float)
+        self.assertGreaterEqual(alt_sinir, 0.0)
+        self.assertLessEqual(alt_sinir, 1.0)
+
+    def _mock_ayarlar_ile_cagir(self, icerik: dict):
+        import json as _json
+        from unittest import mock
+        veri = _json.dumps(icerik)
+        with mock.patch("builtins.open", mock.mock_open(read_data=veri)):
+            return veri_topla.ayarlari_yukle()
+
+    def _temel_gecerli_ayarlar(self):
+        return {
+            "yerlesim_zarfi_r_metre": 100,
+            "kumeleme_kume_sayisi": 3,
+            "projeksiyon_ufku_yil": 5,
+            "maruziyet_alt_siniri": 0.1,
+        }
+
+    def test_eksik_kume_sayisi_hata_verir(self):
+        ayarlar = self._temel_gecerli_ayarlar()
+        del ayarlar["kumeleme_kume_sayisi"]
+        with self.assertRaises(RuntimeError):
+            self._mock_ayarlar_ile_cagir(ayarlar)
+
+    def test_kume_sayisi_birden_kucukse_hata_verir(self):
+        ayarlar = self._temel_gecerli_ayarlar()
+        ayarlar["kumeleme_kume_sayisi"] = 1
+        with self.assertRaises(RuntimeError):
+            self._mock_ayarlar_ile_cagir(ayarlar)
+
+    def test_eksik_ufuk_yil_hata_verir(self):
+        ayarlar = self._temel_gecerli_ayarlar()
+        del ayarlar["projeksiyon_ufku_yil"]
+        with self.assertRaises(RuntimeError):
+            self._mock_ayarlar_ile_cagir(ayarlar)
+
+    def test_negatif_ufuk_yil_hata_verir(self):
+        ayarlar = self._temel_gecerli_ayarlar()
+        ayarlar["projeksiyon_ufku_yil"] = -1
+        with self.assertRaises(RuntimeError):
+            self._mock_ayarlar_ile_cagir(ayarlar)
+
+    def test_alt_sinir_bir_den_buyukse_hata_verir(self):
+        ayarlar = self._temel_gecerli_ayarlar()
+        ayarlar["maruziyet_alt_siniri"] = 1.5
+        with self.assertRaises(RuntimeError):
+            self._mock_ayarlar_ile_cagir(ayarlar)
+
+    def test_alt_sinir_negatifse_hata_verir(self):
+        ayarlar = self._temel_gecerli_ayarlar()
+        ayarlar["maruziyet_alt_siniri"] = -0.1
+        with self.assertRaises(RuntimeError):
+            self._mock_ayarlar_ile_cagir(ayarlar)
+
+    def test_alt_sinir_bir_sinir_degerleri_gecerlidir(self):
+        # ust sinir kontrolu bu oturumda eklendi: tam 0 ve tam 1 gecerli olmali
+        ayarlar_0 = self._temel_gecerli_ayarlar()
+        ayarlar_0["maruziyet_alt_siniri"] = 0.0
+        _, _, _, alt_sinir_0 = self._mock_ayarlar_ile_cagir(ayarlar_0)
+        self.assertEqual(alt_sinir_0, 0.0)
+
+        ayarlar_1 = self._temel_gecerli_ayarlar()
+        ayarlar_1["maruziyet_alt_siniri"] = 1.0
+        _, _, _, alt_sinir_1 = self._mock_ayarlar_ile_cagir(ayarlar_1)
+        self.assertEqual(alt_sinir_1, 1.0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -209,4 +209,4 @@ def create_app():
 
 
 if __name__ == "__main__":
-    create_app().run(debug=False)
+    create_app().run(debug=False, port=8000)

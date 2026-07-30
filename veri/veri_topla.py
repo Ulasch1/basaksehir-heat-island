@@ -100,10 +100,10 @@ CRS_CIKI = "EPSG:32635"
 
 # AI servisi varsayılan URL'si (ortam değişkeninden okunabilir, kodu gömülmez)
 VARSAYILAN_AI_SERVIS_URL = "http://localhost:8000"
-AI_TIMEOUT_SANIYE = 2  # ARC-06'daki 2 saniyelik zaman aşımıyla tutarlı
-
-# Projeksiyon ufuk yılı (ARC-10 henüz yok, fonksiyon varsayılanı)
-PROJEKSIYON_UFUK_YIL = 5
+AI_TIMEOUT_SANIYE = 20  # ARC-01 tek seferlik offline betik; REQ-NF-01'in ARC-06
+                         # (canli arayuz) icin gecerli 2 sn butcesiyle karistirilmamali,
+                         # burada kullanici beklemiyor, soguk baslangicta Flask+sklearn
+                         # 2-4 sn surebiliyor
 
 # Denemeler arası artan bekleme (tekrarlanan Overpass çağrıları için)
 DENEME_FAKTORU = 8
@@ -269,9 +269,10 @@ def osm_to_geometri(data: dict) -> object:
         return shape(gj["geometry"])
 
 
-def ayarlari_yukle() -> float:
+def ayarlari_yukle() -> Tuple[float, int, int, float]:
     """
-    web/src/ayarlar.json dosyasindan yerlesim zarfi tampon yaricapini (R metre) okur.
+    web/src/ayarlar.json dosyasindan yerlesim zarfi tampon yaricapini (R metre),
+    kumeleme_kume_sayisi, projeksiyon_ufku_yil ve maruziyet_alt_siniri degerlerini okur.
     Dosya veya anahtar mevcut degilse acik bir hata basar, cagiran main()'in
     return 1 ile durmasi beklenir.
     """
@@ -287,7 +288,26 @@ def ayarlari_yukle() -> float:
         raise RuntimeError("ayarlar.json icinde 'yerlesim_zarfi_r_metre' anahtari bulunamadi")
     if not isinstance(r_metre, (int, float)) or r_metre <= 0:
         raise RuntimeError("yerlesim_zarfi_r_metre pozitif bir sayi olmalidir")
-    return float(r_metre)
+
+    kume_sayisi = ayarlar.get("kumeleme_kume_sayisi")
+    if kume_sayisi is None:
+        raise RuntimeError("ayarlar.json icinde 'kumeleme_kume_sayisi' anahtari bulunamadi")
+    if not isinstance(kume_sayisi, int) or kume_sayisi < 2:
+        raise RuntimeError("kumeleme_kume_sayisi en az 2 olan bir tam sayi olmalidir")
+
+    ufuk_yil = ayarlar.get("projeksiyon_ufku_yil")
+    if ufuk_yil is None:
+        raise RuntimeError("ayarlar.json icinde 'projeksiyon_ufku_yil' anahtari bulunamadi")
+    if not isinstance(ufuk_yil, int) or ufuk_yil < 1:
+        raise RuntimeError("projeksiyon_ufku_yil pozitif bir tam sayi olmalidir")
+
+    alt_sinir = ayarlar.get("maruziyet_alt_siniri")
+    if alt_sinir is None:
+        raise RuntimeError("ayarlar.json icinde 'maruziyet_alt_siniri' anahtari bulunamadi")
+    if not isinstance(alt_sinir, (int, float)) or alt_sinir < 0 or alt_sinir > 1:
+        raise RuntimeError("maruziyet_alt_siniri 0 ile 1 arasinda bir sayi olmalidir")
+
+    return float(r_metre), kume_sayisi, ufuk_yil, float(alt_sinir)
 
 
 def yerlesim_zarfi_hesapla(bina_geometrileri: list, sinir_geom_m2, r_metre: float):
@@ -403,6 +423,23 @@ def bina_yesil_oranlari_hesapla(
     return bina_orani, yesil_orani, zarf_alani_m2
 
 
+def olcekle_maruziyet(yogunluklar: List[float], alt_sinir: float) -> List[float]:
+    """
+    Nufus yogunluklarini min-max olcekleme ile [alt_sinir, 1] araligina ceker.
+    web/src/skor.ts'teki olcekleMaruziyet fonksiyonunun birebir Python karsiligidir.
+    REQ-F-08 olcekleme kuralina uyar: en dusuk yogunluk alt_sinir'i, en yuksek yogunluk 1'i alir.
+    Tum degerler ayniysa (max == min) her mahalle icin 1 dondurur.
+    """
+    if not yogunluklar:
+        raise ValueError("olcekle_maruziyet: bos dizi ile cagrilamaz")
+    min_val = min(yogunluklar)
+    max_val = max(yogunluklar)
+    if max_val == min_val:
+        return [1.0] * len(yogunluklar)
+    aralik = max_val - min_val
+    return [alt_sinir + (1 - alt_sinir) * ((x - min_val) / aralik) for x in yogunluklar]
+
+
 # ---------------------------------------------------------------------------
 # Ana iş akışı
 # ---------------------------------------------------------------------------
@@ -419,7 +456,7 @@ def main():
 
     # Yapılandırmayı yükle (yerleşim zarfı yarıçapı)
     try:
-        r_metre = ayarlari_yukle()
+        r_metre, kume_sayisi, ufuk_yil, maruziyet_alt_siniri = ayarlari_yukle()
         print(
             f"Yerlesim zarfi tampon yaricapi: {r_metre} m (kaynak: web/src/ayarlar.json)",
             file=sys.stderr,
@@ -637,45 +674,65 @@ def main():
         servis_surumu = saglik_veri.get("servis_surumu", "bilinmiyor")
         print(f"  Servis sağlıklı, sürüm: {servis_surumu}")
 
+        # Ham maruziyet yogunlugu hesapla (REQ-F-24: zarf alani kullan)
+        yogunluklar_ham = []
+        for m in sonuclar:
+            if m["zarf_alan_km2"] > 0:
+                yog = m["nufus"] / m["zarf_alan_km2"]
+            else:
+                yog = 0.0
+            yogunluklar_ham.append(yog)
+
+        # Maruziyet olcekleme (skor.ts ile ayni, REQ-F-08)
+        olceklenmis_maruziyet = olcekle_maruziyet(yogunluklar_ham, maruziyet_alt_siniri)
+
         # Tipoloji isteği
         tipoloji_girdi = []
-        for m in sonuclar:
-            nufus_yog_ham = m["nufus"] / m["alan_km2"] if m["alan_km2"] > 0 else 0
+        for idx, m in enumerate(sonuclar):
             tipoloji_girdi.append({
                 "ad": m["ad"],
                 "yesil_alan_orani": m["yesil_alan_orani"],
                 "bina_yogunlugu": m["bina_yogunlugu"],
-                "nufus_yogunlugu_ham": nufus_yog_ham,
+                "olceklenmis_maruziyet": olceklenmis_maruziyet[idx],
             })
         tipoloji_resp = requests.post(
             f"{ai_url}/tipoloji",
-            json={"mahalleler": tipoloji_girdi},
+            json={"mahalleler": tipoloji_girdi, "kume_sayisi": kume_sayisi},
             timeout=AI_TIMEOUT_SANIYE,
         )
         tipoloji_resp.raise_for_status()
         tipoloji_sonuc = tipoloji_resp.json()
-        tipler = tipoloji_sonuc.get("tipolojiler", {})
+        tipoloji_sonuclar = tipoloji_sonuc.get("sonuclar", [])
+        tipoloji_by_ad = {item["ad"]: item["tipoloji"] for item in tipoloji_sonuclar}
 
         # Projeksiyon isteği
         proj_girdi = [{"ad": m["ad"], "nufus_serisi": m["nufus_serisi"]} for m in sonuclar]
         proj_resp = requests.post(
             f"{ai_url}/projeksiyon",
-            json={"mahalleler": proj_girdi, "ufuk_yil": PROJEKSIYON_UFUK_YIL},
+            json={"mahalleler": proj_girdi, "ufuk_yil": ufuk_yil},
             timeout=AI_TIMEOUT_SANIYE,
         )
         proj_resp.raise_for_status()
         proj_sonuc = proj_resp.json()
-        projeksiyonlar = proj_sonuc.get("projeksiyonlar", {})
+        proj_sonuclar = proj_sonuc.get("sonuclar", [])
+        proj_by_ad = {}
+        for item in proj_sonuclar:
+            proj_by_ad[item["ad"]] = {
+                "hedef_yil": item["hedef_yil"],
+                "tahmini_nufus": item["tahmini_nufus"],
+            }
 
         uretim_zamani = datetime.now(timezone.utc).isoformat()
 
         for m in sonuclar:
             ad = m["ad"]
             ai = {}
-            if ad in tipler:
-                ai["tipoloji"] = tipler[ad]["tipoloji"]
-            if ad in projeksiyonlar:
-                ai["projeksiyon_nufus"] = projeksiyonlar[ad]["nufus"]
+            if ad in tipoloji_by_ad:
+                ai["tipoloji"] = tipoloji_by_ad[ad]
+            if ad in proj_by_ad:
+                ai["projeksiyon_nufus"] = {
+                    str(proj_by_ad[ad]["hedef_yil"]): proj_by_ad[ad]["tahmini_nufus"]
+                }
             if ai:
                 ai["_uretim_zamani"] = uretim_zamani
                 ai["_servis_surumu"] = servis_surumu
