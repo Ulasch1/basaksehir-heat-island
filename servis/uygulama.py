@@ -14,6 +14,7 @@ import math
 import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
+from flask_cors import CORS
 
 SERVIS_SURUMU = "1.0.0"
 MODEL_SURUMU = "1.0.0"
@@ -22,6 +23,7 @@ _SERVIS_BASLATMA_ZAMANI = datetime.now(timezone.utc).isoformat()
 
 def create_app():
     app = Flask(__name__)
+    CORS(app)
 
     @app.route("/saglik", methods=["GET"])
     def saglik():

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import {
   StatikKaynak,
   ServisKaynak,
@@ -140,6 +140,52 @@ describe('StatikKaynak', () => {
     expect(sonuc.servisSurumu).toBe('');
     expect(sonuc.uretimZamani).toBe('');
     expect(sonuc.sonuclar).toEqual([]);
+  });
+
+  // Regresyon: veri_topla.py AI servisi calismadan calistirildiginda her
+  // mahallenin ai_onbellek alani '{}' olarak sifirlanabilir. Bu durumda
+  // tipolojiGetir/projeksiyonGetir eskiden "Cannot convert undefined or
+  // null to object" hatasiyla coker, hicbir mahalleyi atlamadan ilerlerdi.
+  it('tipolojiGetir - tum mahallelerin ai_onbellegi bos {} ise cokmez, bos sonuc doner', async () => {
+    const bosOnbellekliFixture: Mahalle[] = fixture.map(m => ({ ...m, ai_onbellek: {} }));
+    const sonuc = await statik.tipolojiGetir(bosOnbellekliFixture);
+    expect(sonuc.guncel).toBe(false);
+    expect(sonuc.sonuclar).toEqual([]);
+    expect(sonuc.uretimZamani).toBe('');
+    expect(sonuc.servisSurumu).toBe('');
+  });
+
+  it('projeksiyonGetir - tum mahallelerin ai_onbellegi bos {} ise cokmez, bos sonuc doner', async () => {
+    const bosOnbellekliFixture: Mahalle[] = fixture.map(m => ({ ...m, ai_onbellek: {} }));
+    const sonuc = await statik.projeksiyonGetir(bosOnbellekliFixture, 5);
+    expect(sonuc.guncel).toBe(false);
+    expect(sonuc.sonuclar).toEqual([]);
+    expect(sonuc.uretimZamani).toBe('');
+    expect(sonuc.servisSurumu).toBe('');
+  });
+
+  it('tipolojiGetir - bazi mahalleler bos ai_onbellege sahipse yalnizca dolu olanlari dondurur, uretimZamani/servisSurumu ilk dolu kayittan gelir', async () => {
+    const karisikFixture: Mahalle[] = [
+      { ...fixture[0], ai_onbellek: {} },
+      fixture[1],
+      { ...fixture[2], ai_onbellek: {} },
+    ];
+    const sonuc = await statik.tipolojiGetir(karisikFixture);
+    expect(sonuc.sonuclar).toEqual([{ ad: 'Altinsehir', tipoloji: 0 }]);
+    expect(sonuc.uretimZamani).toBe(fixture[1].ai_onbellek._uretim_zamani);
+    expect(sonuc.servisSurumu).toBe(fixture[1].ai_onbellek._servis_surumu);
+  });
+
+  it('projeksiyonGetir - bazi mahalleler bos ai_onbellege sahipse yalnizca dolu olanlari dondurur, uretimZamani/servisSurumu ilk dolu kayittan gelir', async () => {
+    const karisikFixture: Mahalle[] = [
+      { ...fixture[0], ai_onbellek: {} },
+      fixture[1],
+      { ...fixture[2], ai_onbellek: {} },
+    ];
+    const sonuc = await statik.projeksiyonGetir(karisikFixture, 5);
+    expect(sonuc.sonuclar).toEqual([{ ad: 'Altinsehir', tahminiNufus: 750, hedefYil: 2030 }]);
+    expect(sonuc.uretimZamani).toBe(fixture[1].ai_onbellek._uretim_zamani);
+    expect(sonuc.servisSurumu).toBe(fixture[1].ai_onbellek._servis_surumu);
   });
 });
 
@@ -301,5 +347,87 @@ describe('ServisKaynak', () => {
     const sonuc = await servis.projeksiyonGetir(fixture, 5);
     const statikSonuc = await statik.projeksiyonGetir(fixture, 5);
     expect(sonuc).toEqual(statikSonuc);
+  });
+});
+
+describe('izgaraGetir', () => {
+  const izgaraFikstur = {
+    Samlar: {
+      hucre_metre: 100,
+      hucreler: [
+        { sinir: { type: 'Polygon', coordinates: [] }, yesil_alan_orani: 0.12, bina_yogunlugu: 0.34 },
+        { sinir: { type: 'Polygon', coordinates: [] }, yesil_alan_orani: 0.45, bina_yogunlugu: 0.22 },
+      ],
+    },
+  };
+
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('basarili fetch sonrasi dogru mahallenin hucrelerini dondurur', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => izgaraFikstur,
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const { izgaraGetir } = await import('../veriKaynagi');
+    const hucreler = await izgaraGetir('Samlar');
+    expect(hucreler).toHaveLength(2);
+    expect(hucreler[0].yesil_alan_orani).toBe(0.12);
+    expect(mockFetch).toHaveBeenCalledWith('/izgara.json');
+  });
+
+  it('ayni mahalle icin iki kez cagrildiginda fetch sadece bir kez yapilir', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => izgaraFikstur,
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const { izgaraGetir } = await import('../veriKaynagi');
+    await izgaraGetir('Samlar');
+    await izgaraGetir('Samlar');
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('olmayan mahalle adi ile hata firlatir', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => izgaraFikstur,
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const { izgaraGetir } = await import('../veriKaynagi');
+    await expect(izgaraGetir('YokMahalle')).rejects.toThrow("izgaraGetir: 'YokMahalle' icin izgara verisi bulunamadi");
+  });
+
+  it('fetch cevap.ok=false oldugunda hata firlatir', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const { izgaraGetir } = await import('../veriKaynagi');
+    await expect(izgaraGetir('Samlar')).rejects.toThrow('Izgara dosyasi yuklenemedi');
+  });
+
+  it('basarisiz fetch sonrasi cache sifirlanir, sonraki cagri fetch\'i tekrar dener', async () => {
+    const mockFetch = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 404, statusText: 'Not Found' })
+      .mockResolvedValueOnce({ ok: true, json: async () => izgaraFikstur });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const { izgaraGetir } = await import('../veriKaynagi');
+
+    await expect(izgaraGetir('Samlar')).rejects.toThrow('Izgara dosyasi yuklenemedi');
+
+    const hucreler = await izgaraGetir('Samlar');
+    expect(hucreler).toHaveLength(2);
+    expect(hucreler[0].yesil_alan_orani).toBe(0.12);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 });

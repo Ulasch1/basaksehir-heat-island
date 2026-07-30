@@ -19,10 +19,10 @@ export interface MahalleSinir {
 }
 
 export interface AiOnbellek {
-  tipoloji: number;
-  projeksiyon_nufus: Record<string, number>;
-  _uretim_zamani: string;
-  _servis_surumu: string;
+  tipoloji?: number;
+  projeksiyon_nufus?: Record<string, number>;
+  _uretim_zamani?: string;
+  _servis_surumu?: string;
 }
 
 export interface Mahalle {
@@ -68,6 +68,49 @@ export interface VeriKaynagi {
   projeksiyonGetir(mahalleler: Mahalle[], ufuk: number): Promise<ProjeksiyonSonucu>;
 }
 
+export interface IzgaraHucre {
+  sinir: MahalleSinir;
+  yesil_alan_orani: number;
+  bina_yogunlugu: number;
+}
+
+interface IzgaraMahalleVerisi {
+  hucre_metre: number;
+  hucreler: IzgaraHucre[];
+}
+
+type IzgaraDosyasi = Record<string, IzgaraMahalleVerisi>;
+
+let izgaraCache: Promise<IzgaraDosyasi> | null = null;
+
+async function izgaraDosyasiniGetir(): Promise<IzgaraDosyasi> {
+  if (izgaraCache) {
+    return izgaraCache;
+  }
+  izgaraCache = (async () => {
+    try {
+      const cevap = await fetch('/izgara.json');
+      if (!cevap.ok) {
+        throw new Error(`Izgara dosyasi yuklenemedi: ${cevap.status} ${cevap.statusText}`);
+      }
+      return (await cevap.json()) as IzgaraDosyasi;
+    } catch (e) {
+      izgaraCache = null;
+      throw e;
+    }
+  })();
+  return izgaraCache;
+}
+
+export async function izgaraGetir(mahalleAd: string): Promise<IzgaraHucre[]> {
+  const veri = await izgaraDosyasiniGetir();
+  const mahalleVeri = veri[mahalleAd];
+  if (!mahalleVeri) {
+    throw new Error(`izgaraGetir: '${mahalleAd}' icin izgara verisi bulunamadi`);
+  }
+  return mahalleVeri.hucreler;
+}
+
 // ========== Statik Kaynak ==========
 
 export class StatikKaynak implements VeriKaynagi {
@@ -80,38 +123,52 @@ export class StatikKaynak implements VeriKaynagi {
   }
 
   async tipolojiGetir(mahalleler: Mahalle[]): Promise<TipolojiSonucu> {
-    const sonuclar: TipolojiSonucItem[] = mahalleler.map(m => ({
-      ad: m.ad,
-      tipoloji: m.ai_onbellek.tipoloji,
-    }));
-    const uretimZamani = mahalleler.length > 0 ? mahalleler[0].ai_onbellek._uretim_zamani : '';
-    const servisSurumu = mahalleler.length > 0 ? mahalleler[0].ai_onbellek._servis_surumu : '';
+    const sonuclar: TipolojiSonucItem[] = [];
+    for (const m of mahalleler) {
+      if (typeof m.ai_onbellek.tipoloji === 'number' && Number.isFinite(m.ai_onbellek.tipoloji)) {
+        sonuclar.push({ ad: m.ad, tipoloji: m.ai_onbellek.tipoloji });
+      }
+    }
+    const ilkUretimZamani = mahalleler
+      .find(m => typeof m.ai_onbellek._uretim_zamani === 'string' && m.ai_onbellek._uretim_zamani.length > 0)
+      ?.ai_onbellek._uretim_zamani ?? '';
+    const ilkServisSurumu = mahalleler
+      .find(m => typeof m.ai_onbellek._servis_surumu === 'string' && m.ai_onbellek._servis_surumu.length > 0)
+      ?.ai_onbellek._servis_surumu ?? '';
     return {
       guncel: false,
       sonuclar,
-      uretimZamani,
-      servisSurumu,
+      uretimZamani: ilkUretimZamani,
+      servisSurumu: ilkServisSurumu,
     };
   }
 
   async projeksiyonGetir(mahalleler: Mahalle[], ufuk: number): Promise<ProjeksiyonSonucu> {
     // ufuk parametresi statik onbellegi etkilemez; yalnizca arayuz uyumlulugu icin kabul edilir
-    const sonuclar: ProjeksiyonSonucItem[] = mahalleler.map(m => {
-      const giris = Object.entries(m.ai_onbellek.projeksiyon_nufus)[0];
-      const [yilStr, tahminiNufus] = giris;
-      return {
-        ad: m.ad,
-        tahminiNufus,
-        hedefYil: parseInt(yilStr, 10),
-      };
-    });
-    const uretimZamani = mahalleler.length > 0 ? mahalleler[0].ai_onbellek._uretim_zamani : '';
-    const servisSurumu = mahalleler.length > 0 ? mahalleler[0].ai_onbellek._servis_surumu : '';
+    const sonuclar: ProjeksiyonSonucItem[] = [];
+    for (const m of mahalleler) {
+      const proj = m.ai_onbellek.projeksiyon_nufus;
+      if (typeof proj === 'object' && proj !== null && Object.keys(proj).length > 0) {
+        const giris = Object.entries(proj)[0];
+        const [yilStr, tahminiNufus] = giris;
+        sonuclar.push({
+          ad: m.ad,
+          tahminiNufus,
+          hedefYil: parseInt(yilStr, 10),
+        });
+      }
+    }
+    const ilkUretimZamani = mahalleler
+      .find(m => typeof m.ai_onbellek._uretim_zamani === 'string' && m.ai_onbellek._uretim_zamani.length > 0)
+      ?.ai_onbellek._uretim_zamani ?? '';
+    const ilkServisSurumu = mahalleler
+      .find(m => typeof m.ai_onbellek._servis_surumu === 'string' && m.ai_onbellek._servis_surumu.length > 0)
+      ?.ai_onbellek._servis_surumu ?? '';
     return {
       guncel: false,
       sonuclar,
-      uretimZamani,
-      servisSurumu,
+      uretimZamani: ilkUretimZamani,
+      servisSurumu: ilkServisSurumu,
     };
   }
 }
