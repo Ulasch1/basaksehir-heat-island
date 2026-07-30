@@ -96,6 +96,7 @@ export default function Harita({
           className="h-full w-full"
           zoomControl={true}
           scrollWheelZoom={true}
+          dragging={false}
           style={{ background: 'oklch(0.9 0.008 260)' }}
         >
           <TileLayer
