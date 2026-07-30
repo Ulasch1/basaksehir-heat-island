@@ -1,9 +1,8 @@
-import { useMemo, useEffect } from 'react';
+import { useMemo } from 'react';
 import {
   MapContainer,
   TileLayer,
   GeoJSON,
-  useMap,
 } from 'react-leaflet';
 import type { FeatureCollection, Feature, Geometry } from 'geojson';
 import L from 'leaflet';
@@ -17,14 +16,6 @@ interface HaritaProps {
   seciliAd: string | null;
   onSecim: (ad: string) => void;
   butceSecilenAdlari: Set<string>;
-}
-
-function FitBoundsOnce({ bounds }: { bounds: L.LatLngBounds }) {
-  const map = useMap();
-  useEffect(() => {
-    map.fitBounds(bounds);
-  }, [map, bounds]);
-  return null;
 }
 
 export default function Harita({
@@ -101,6 +92,7 @@ export default function Harita({
 
       <div className="flex-1 min-h-0 rounded-md overflow-hidden relative">
         <MapContainer
+          bounds={bounds}
           className="h-full w-full"
           zoomControl={true}
           scrollWheelZoom={true}
@@ -110,7 +102,6 @@ export default function Harita({
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             attribution="&copy; OpenStreetMap katkıcıları (ODbL) — TÜİK ADNKS"
           />
-          <FitBoundsOnce bounds={bounds} />
           <GeoJSON
             key={geoJsonKey}
             data={featureCollection as unknown as GeoJSON.GeoJsonObject}
