@@ -111,7 +111,7 @@ class BinaYesilOranHesaplaTestleri(unittest.TestCase):
                 {"type": "Feature", "properties": {"tags": {"leisure": "park"}}, "geometry": park_poly},
             ],
         }
-        bina_orani, yesil_orani, zarf_alani_m2 = veri_topla.bina_yesil_oranlari_hesapla(
+        bina_orani, yesil_orani, zarf_alani_m2, *_ = veri_topla.bina_yesil_oranlari_hesapla(
             fc, self.mahalle_alani_m2, self.transformer, self.sinir_geom_m2, self.r_metre
         )
         self.assertAlmostEqual(zarf_alani_m2, self.mahalle_alani_m2, places=0)
@@ -128,7 +128,7 @@ class BinaYesilOranHesaplaTestleri(unittest.TestCase):
                 {"type": "Feature", "properties": {"tags": {"natural": "tree"}}, "geometry": tree_point},
             ],
         }
-        _, yesil_orani, _ = veri_topla.bina_yesil_oranlari_hesapla(
+        _, yesil_orani, _, *_ = veri_topla.bina_yesil_oranlari_hesapla(
             fc, self.mahalle_alani_m2, self.transformer, self.sinir_geom_m2, self.r_metre
         )
         beklenen_tampon_alani = math.pi * (veri_topla.AGAC_TAC_YARICAPI_M ** 2)
@@ -146,7 +146,7 @@ class BinaYesilOranHesaplaTestleri(unittest.TestCase):
                 {"type": "Feature", "properties": {"tags": {"building": "yes"}}, "geometry": dev_bina},
             ],
         }
-        bina_orani, yesil_orani, _ = veri_topla.bina_yesil_oranlari_hesapla(
+        bina_orani, yesil_orani, _, *_ = veri_topla.bina_yesil_oranlari_hesapla(
             fc, self.mahalle_alani_m2, self.transformer, self.sinir_geom_m2, self.r_metre
         )
         self.assertEqual(bina_orani, 1.0)
@@ -154,7 +154,7 @@ class BinaYesilOranHesaplaTestleri(unittest.TestCase):
 
     def test_sifir_mahalle_alaninda_sifir_doner(self):
         fc = {"type": "FeatureCollection", "features": []}
-        bina_orani, yesil_orani, zarf = veri_topla.bina_yesil_oranlari_hesapla(
+        bina_orani, yesil_orani, zarf, *_ = veri_topla.bina_yesil_oranlari_hesapla(
             fc, 0.0, self.transformer, self.sinir_geom_m2, self.r_metre
         )
         self.assertEqual((bina_orani, yesil_orani, zarf), (0.0, 0.0, 0.0))
@@ -174,7 +174,7 @@ class BinaYesilOranHesaplaTestleri(unittest.TestCase):
                 {"type": "Feature", "properties": {"tags": {"highway": "residential"}}, "geometry": yol},
             ],
         }
-        bina_orani, yesil_orani, _ = veri_topla.bina_yesil_oranlari_hesapla(
+        bina_orani, yesil_orani, _, *_ = veri_topla.bina_yesil_oranlari_hesapla(
             fc, self.mahalle_alani_m2, self.transformer, self.sinir_geom_m2, self.r_metre
         )
         self.assertAlmostEqual(bina_orani, 1.0, places=6)  # tüm alan bina
@@ -198,7 +198,7 @@ class BinaYesilOranHesaplaTestleri(unittest.TestCase):
                 {"type": "Feature", "properties": {"tags": {"leisure": "park"}}, "geometry": park},
             ],
         }
-        _, yesil_orani, _ = veri_topla.bina_yesil_oranlari_hesapla(
+        _, yesil_orani, _, *_ = veri_topla.bina_yesil_oranlari_hesapla(
             fc, self.mahalle_alani_m2, self.transformer, self.sinir_geom_m2, self.r_metre
         )
         grass_geom = Polygon([(0, 0), (500, 0), (500, 400), (0, 400)])
@@ -241,7 +241,7 @@ class BinaYesilOranHesaplaTestleri(unittest.TestCase):
             "geometry": genis_bina_poly,
         })
         fc = {"type": "FeatureCollection", "features": features}
-        _, yesil_orani, _ = veri_topla.bina_yesil_oranlari_hesapla(
+        _, yesil_orani, _, *_ = veri_topla.bina_yesil_oranlari_hesapla(
             fc, self.mahalle_alani_m2, self.transformer, genis_sinir, self.r_metre
         )
         beklenen_toplam_alan = etiket_sayisi * (kare_boyut ** 2)
@@ -281,7 +281,7 @@ class BinaYesilOranHesaplaTestleri(unittest.TestCase):
             "geometry": full_building,
         })
         fc = {"type": "FeatureCollection", "features": features}
-        _, yesil_orani, _ = veri_topla.bina_yesil_oranlari_hesapla(
+        _, yesil_orani, _, *_ = veri_topla.bina_yesil_oranlari_hesapla(
             fc, self.mahalle_alani_m2, self.transformer, self.sinir_geom_m2, self.r_metre
         )
         self.assertEqual(yesil_orani, 0.0)
@@ -326,7 +326,7 @@ class BinaYesilOranHesaplaTestleri(unittest.TestCase):
                 {"type": "Feature", "properties": {"tags": {"natural": "tree"}}, "geometry": agac},
             ],
         }
-        _, yesil_orani, _ = veri_topla.bina_yesil_oranlari_hesapla(
+        _, yesil_orani, _, *_ = veri_topla.bina_yesil_oranlari_hesapla(
             fc, self.mahalle_alani_m2, self.transformer, self.sinir_geom_m2, self.r_metre
         )
         beklenen_oran = 1_000_000 / self.mahalle_alani_m2
@@ -346,7 +346,7 @@ class BinaYesilOranHesaplaTestleri(unittest.TestCase):
                 {"type": "Feature", "properties": {"tags": {"landuse": "forest"}}, "geometry": park},
             ],
         }
-        _, yesil_orani, _ = veri_topla.bina_yesil_oranlari_hesapla(
+        _, yesil_orani, _, *_ = veri_topla.bina_yesil_oranlari_hesapla(
             fc, self.mahalle_alani_m2, self.transformer, self.sinir_geom_m2, self.r_metre
         )
         beklenen_oran = 500_000 / self.mahalle_alani_m2
@@ -363,7 +363,7 @@ class BinaYesilOranHesaplaTestleri(unittest.TestCase):
                 {"type": "Feature", "properties": {"tags": {"building": "yes"}}, "geometry": bina},
             ],
         }
-        bina_orani, _, _ = veri_topla.bina_yesil_oranlari_hesapla(
+        bina_orani, _, _, *_ = veri_topla.bina_yesil_oranlari_hesapla(
             fc, self.mahalle_alani_m2, self.transformer, self.sinir_geom_m2, self.r_metre
         )
         beklenen_oran = 500_000 / self.mahalle_alani_m2
@@ -389,7 +389,7 @@ class BinaYesilOranHesaplaTestleri(unittest.TestCase):
                 {"type": "Feature", "properties": {"tags": {"building": "yes"}}, "geometry": kucuk_bina},
             ],
         }
-        bina_orani, yesil_orani, zarf_alani_m2 = veri_topla.bina_yesil_oranlari_hesapla(
+        bina_orani, yesil_orani, zarf_alani_m2, *_ = veri_topla.bina_yesil_oranlari_hesapla(
             fc, sinir.area, self.transformer, sinir, r_metre=50.0
         )
         self.assertGreater(zarf_alani_m2, 0)
@@ -463,7 +463,7 @@ class AyarlariYukleTestleri(unittest.TestCase):
 
     def test_gercek_ayarlar_dosyasi_ile_dogru_deger_doner(self):
         # Bu test repo kokunden calistirilmasini varsayar (python -m unittest veri.test_veri_topla)
-        r_metre, kume_sayisi, ufuk_yil, alt_sinir = veri_topla.ayarlari_yukle()
+        r_metre, kume_sayisi, ufuk_yil, alt_sinir, izgara_metre = veri_topla.ayarlari_yukle()
         self.assertIsInstance(r_metre, float)
         self.assertGreater(r_metre, 0)
         self.assertIsInstance(kume_sayisi, int)
@@ -473,6 +473,8 @@ class AyarlariYukleTestleri(unittest.TestCase):
         self.assertIsInstance(alt_sinir, float)
         self.assertGreaterEqual(alt_sinir, 0.0)
         self.assertLessEqual(alt_sinir, 1.0)
+        self.assertIsInstance(izgara_metre, float)
+        self.assertGreater(izgara_metre, 0)
 
     def _mock_ayarlar_ile_cagir(self, icerik: dict):
         import json as _json
@@ -487,6 +489,7 @@ class AyarlariYukleTestleri(unittest.TestCase):
             "kumeleme_kume_sayisi": 3,
             "projeksiyon_ufku_yil": 5,
             "maruziyet_alt_siniri": 0.1,
+            "izgara_hucre_metre": 100,
         }
 
     def test_eksik_kume_sayisi_hata_verir(self):
@@ -529,13 +532,101 @@ class AyarlariYukleTestleri(unittest.TestCase):
         # ust sinir kontrolu bu oturumda eklendi: tam 0 ve tam 1 gecerli olmali
         ayarlar_0 = self._temel_gecerli_ayarlar()
         ayarlar_0["maruziyet_alt_siniri"] = 0.0
-        _, _, _, alt_sinir_0 = self._mock_ayarlar_ile_cagir(ayarlar_0)
+        _, _, _, alt_sinir_0, _ = self._mock_ayarlar_ile_cagir(ayarlar_0)
         self.assertEqual(alt_sinir_0, 0.0)
 
         ayarlar_1 = self._temel_gecerli_ayarlar()
         ayarlar_1["maruziyet_alt_siniri"] = 1.0
-        _, _, _, alt_sinir_1 = self._mock_ayarlar_ile_cagir(ayarlar_1)
+        _, _, _, alt_sinir_1, _ = self._mock_ayarlar_ile_cagir(ayarlar_1)
         self.assertEqual(alt_sinir_1, 1.0)
+
+
+class IzgaraUretVeOlcTestleri(unittest.TestCase):
+    """izgara_uret_ve_olc() fonksiyonu icin birim testleri."""
+
+    def setUp(self):
+        self.transformer_ters = pyproj.Transformer.from_crs(
+            "EPSG:32635", "EPSG:4326", always_xy=True
+        )
+
+    def test_hucre_sayisi_dogru_hesaplanir(self):
+        """300m x 200m zarf, 100m hucre: tam 3x2 = 6 hucre."""
+        zarf = Polygon([(0, 0), (300, 0), (300, 200), (0, 200)])
+        sonuc = veri_topla.izgara_uret_ve_olc(
+            zarf, [], [], self.transformer_ters, hucre_metre=100.0
+        )
+        self.assertEqual(len(sonuc), 6)
+
+    def test_kenar_hucreleri_kirpilir_ve_kucuk_dilimler_atlanir(self):
+        """
+        Zarf 100x100'luk ana hucre + 5x5'lik (25 m2) kucuk bir ek parca.
+        5x5'lik parca 100 m hucrenin %0.25'ine denk gelir, %10 esiginin
+        altinda oldugu icin o hucre atlanmali, sadece 1 hucre donmeli.
+        """
+        ana = Polygon([(0, 0), (100, 0), (100, 100), (0, 100)])
+        ek = Polygon([(100, 0), (105, 0), (105, 5), (100, 5)])
+        zarf = unary_union([ana, ek])
+        sonuc = veri_topla.izgara_uret_ve_olc(
+            zarf, [], [], self.transformer_ters, hucre_metre=100.0
+        )
+        self.assertEqual(len(sonuc), 1)
+
+    def test_bina_ve_yesil_orani_elle_hesaplananla_esler(self):
+        """Tek hucrede bina %50, yesil %20 kapliyor."""
+        zarf = Polygon([(0, 0), (100, 0), (100, 100), (0, 100)])
+        bina = [Polygon([(0, 0), (50, 0), (50, 100), (0, 100)])]  # 5000 m2
+        yesil = [Polygon([(50, 0), (70, 0), (70, 100), (50, 100)])]  # 2000 m2
+        sonuc = veri_topla.izgara_uret_ve_olc(
+            zarf, bina, yesil, self.transformer_ters, hucre_metre=100.0
+        )
+        self.assertEqual(len(sonuc), 1)
+        hucre = sonuc[0]
+        self.assertAlmostEqual(hucre["bina_yogunlugu"], 0.5, places=6)
+        self.assertAlmostEqual(hucre["yesil_alan_orani"], 0.2, places=6)
+
+    def test_bos_zarf_bos_liste_doner(self):
+        """Bos (empty) zarf gecirilirse hucre uretilmeden bos liste donmeli."""
+        bos_zarf = Polygon()
+        sonuc = veri_topla.izgara_uret_ve_olc(
+            bos_zarf, [], [], self.transformer_ters, hucre_metre=100.0
+        )
+        self.assertEqual(sonuc, [])
+
+    def test_ciktinin_koordinatlari_epsg4326_makul_aralikta(self):
+        """
+        Basaksehir civari (UTM 35N: 290000, 4560000) 500x500 m zarf icin
+        tum hucre koordinatlari lon 28-29, lat 40-42 araliginda olmalidir.
+        """
+        # EPSG:32635'te yaklasik bir nokta (Istanbul/Basaksehir)
+        merkez_x, merkez_y = 641100, 4550107
+        yarim = 250
+        zarf = Polygon([
+            (merkez_x - yarim, merkez_y - yarim),
+            (merkez_x + yarim, merkez_y - yarim),
+            (merkez_x + yarim, merkez_y + yarim),
+            (merkez_x - yarim, merkez_y + yarim),
+        ])
+        sonuc = veri_topla.izgara_uret_ve_olc(
+            zarf, [], [], self.transformer_ters, hucre_metre=100.0
+        )
+        self.assertGreater(len(sonuc), 0)
+        for hucre in sonuc:
+            sinir = hucre["sinir"]
+            # GeoJSON geometrisindeki tum koordinatlari gez
+            coords = sinir.get("coordinates", [])
+            if sinir["type"] == "Polygon":
+                coords = coords[0]  # dis halka
+            elif sinir["type"] == "MultiPolygon":
+                # tum poligonlar icin koordinatlari duzlestir
+                flat = []
+                for ring in coords:
+                    flat.extend(ring[0])
+                coords = flat
+            for lon, lat in coords:
+                self.assertGreater(lon, 28.0)
+                self.assertLess(lon, 29.0)
+                self.assertGreater(lat, 40.0)
+                self.assertLess(lat, 42.0)
 
 
 if __name__ == "__main__":

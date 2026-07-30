@@ -22,8 +22,9 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple, Union
 
 import requests
-from shapely.geometry import Point, Polygon, MultiPolygon, shape
+from shapely.geometry import Point, Polygon, MultiPolygon, shape, box
 from shapely.ops import transform, unary_union
+from shapely import STRtree
 import pyproj
 from osm2geojson import json2geojson
 
@@ -145,6 +146,11 @@ def ad_normallestir(ad: str) -> str:
 def projeksiyon_transformatörü() -> pyproj.Transformer:
     """WGS84 -> UTM 35N dönüşümü yapan transformer nesnesi."""
     return pyproj.Transformer.from_crs(CRS_GIRD, CRS_CIKI, always_xy=True)
+
+
+def projeksiyon_transformatoru_ters() -> pyproj.Transformer:
+    """UTM 35N -> WGS84 dönüşümü yapan ters transformer nesnesi."""
+    return pyproj.Transformer.from_crs(CRS_CIKI, CRS_GIRD, always_xy=True)
 
 
 def geometri_alani_m2(geom_4326, transformer: pyproj.Transformer) -> float:
@@ -269,10 +275,11 @@ def osm_to_geometri(data: dict) -> object:
         return shape(gj["geometry"])
 
 
-def ayarlari_yukle() -> Tuple[float, int, int, float]:
+def ayarlari_yukle() -> Tuple[float, int, int, float, float]:
     """
     web/src/ayarlar.json dosyasindan yerlesim zarfi tampon yaricapini (R metre),
-    kumeleme_kume_sayisi, projeksiyon_ufku_yil ve maruziyet_alt_siniri degerlerini okur.
+    kumeleme_kume_sayisi, projeksiyon_ufku_yil, maruziyet_alt_siniri ve izgara
+    hucre boyutunu (izgara_hucre_metre) okur.
     Dosya veya anahtar mevcut degilse acik bir hata basar, cagiran main()'in
     return 1 ile durmasi beklenir.
     """
@@ -307,7 +314,13 @@ def ayarlari_yukle() -> Tuple[float, int, int, float]:
     if not isinstance(alt_sinir, (int, float)) or alt_sinir < 0 or alt_sinir > 1:
         raise RuntimeError("maruziyet_alt_siniri 0 ile 1 arasinda bir sayi olmalidir")
 
-    return float(r_metre), kume_sayisi, ufuk_yil, float(alt_sinir)
+    izgara_metre = ayarlar.get("izgara_hucre_metre")
+    if izgara_metre is None:
+        raise RuntimeError("ayarlar.json icinde 'izgara_hucre_metre' anahtari bulunamadi")
+    if not isinstance(izgara_metre, (int, float)) or izgara_metre <= 0:
+        raise RuntimeError("izgara_hucre_metre pozitif bir sayi olmalidir")
+
+    return float(r_metre), kume_sayisi, ufuk_yil, float(alt_sinir), float(izgara_metre)
 
 
 def yerlesim_zarfi_hesapla(bina_geometrileri: list, sinir_geom_m2, r_metre: float):
@@ -330,7 +343,7 @@ def bina_yesil_oranlari_hesapla(
     transformer: pyproj.Transformer,
     sinir_geom_m2,  # EPSG:32635'te mahalle siniri poligonu
     r_metre: float,
-) -> Tuple[float, float, float]:
+) -> tuple:
     """
     Overpass'tan dönen bina/yesil alan FeatureCollection'ini isler.
 
@@ -338,11 +351,14 @@ def bina_yesil_oranlari_hesapla(
     Zarf, bina poligonlarinin bufffer, birlesim ve sinirla kesilmesiyle
     olusturulur. Yesil alan orani ve bina yogunlugu zarf alanina oranlanir.
 
-    Dönüş: (bina_orani, yesil_orani, zarf_alani_m2)
+    Dönüş:
+      (bina_orani, yesil_orani, zarf_alani_m2,
+       bina_birlesimi_sinir_ici, yesil_birlesimi, zarf_geom,
+       bina_geometrileri_ham, yesil_geometrileri_ham)
     Sifir zarf alani durumunda ValueError firlatir.
     """
     if mahalle_alani_m2 <= 0:
-        return 0.0, 0.0, 0.0
+        return 0.0, 0.0, 0.0, Polygon(), MultiPolygon(), Polygon(), [], []
 
     bina_geometrileri_ham = []  # ham projekte bina poligonlari (kırpılmamış)
     yesil_geometrileri_ham = []  # ham projekte yesil poligonlar (kırpılmamış)
@@ -405,6 +421,7 @@ def bina_yesil_oranlari_hesapla(
         yesil_icerigi = yesil_birlesimi.intersection(zarf_geom)
         yesil_orani_ham = yesil_icerigi.area / zarf_alani_m2
     else:
+        yesil_birlesimi = MultiPolygon()
         yesil_orani_ham = 0.0
 
     # Ham değerleri stderr'a yaz
@@ -420,7 +437,110 @@ def bina_yesil_oranlari_hesapla(
 
     bina_orani = min(1.0, bina_orani_ham)
     yesil_orani = min(1.0, yesil_orani_ham)
-    return bina_orani, yesil_orani, zarf_alani_m2
+    return (
+        bina_orani,
+        yesil_orani,
+        zarf_alani_m2,
+        bina_birlesimi_sinir_ici,
+        yesil_birlesimi,
+        zarf_geom,
+        bina_geometrileri_ham,
+        yesil_geometrileri_ham,
+    )
+
+
+def izgara_uret_ve_olc(
+    zarf_geom,
+    bina_geometrileri_ham: list,
+    yesil_geometrileri_ham: list,
+    transformer_ters: pyproj.Transformer,
+    hucre_metre: float = 100.0,
+) -> List[dict]:
+    """
+    Yerlesim zarfini kaplayan duzgun bir izgara (grid) uretir ve her hucre icin
+    yesil alan orani ile bina yogunlugunu ham olcum olarak hesaplar.
+
+    Dikkat: Bu fonksiyon TEHLIKE/RISK SKORU HESAPLAMAZ, sadece ham oran uretir.
+    Formul web/src/skor.ts'dedir.
+    """
+    # Zarf bos veya gecersiz ise bos liste don
+    if zarf_geom.is_empty or zarf_geom.area <= 0:
+        return []
+
+    # Bounding box uzerinden duzgun izgara olustur
+    minx, miny, maxx, maxy = zarf_geom.bounds
+    hucreler = []
+
+    # STRtree indekslerini dongu disinda bir kez kur (performans)
+    bina_tree = STRtree(bina_geometrileri_ham) if bina_geometrileri_ham else None
+    yesil_tree = STRtree(yesil_geometrileri_ham) if yesil_geometrileri_ham else None
+
+    x = minx
+    while x < maxx:
+        y = miny
+        while y < maxy:
+            # Hucre aday kutusu
+            hucre_kutusu = box(x, y, x + hucre_metre, y + hucre_metre)
+            kesisim = hucre_kutusu.intersection(zarf_geom)
+
+            if kesisim.is_empty:
+                y += hucre_metre
+                continue
+
+            # Kenar dilimi gurultu esigi: nominal alanin %10'undan az alanli hucreleri atla
+            if kesisim.area < 0.10 * (hucre_metre ** 2):
+                y += hucre_metre
+                continue
+
+            kesisim_alani = kesisim.area
+            if kesisim_alani <= 0.0:
+                y += hucre_metre
+                continue
+
+            # Bina yogunlugu hesapla
+            bina_alani = 0.0
+            if bina_tree is not None:
+                # STRtree ile aday bul
+                indeksler = bina_tree.query(kesisim)
+                if len(indeksler) > 0:
+                    aday_geoms = [bina_geometrileri_ham[i] for i in indeksler]
+                    # Cakismalari onlemek icin union sonra intersection
+                    bina_union = unary_union(aday_geoms)
+                    bina_kes = bina_union.intersection(kesisim)
+                    bina_alani = bina_kes.area
+
+            bina_orani = bina_alani / kesisim_alani
+
+            # Yesil alan orani hesapla
+            yesil_alani = 0.0
+            if yesil_tree is not None:
+                indeksler = yesil_tree.query(kesisim)
+                if len(indeksler) > 0:
+                    aday_geoms = [yesil_geometrileri_ham[i] for i in indeksler]
+                    yesil_union = unary_union(aday_geoms)
+                    yesil_kes = yesil_union.intersection(kesisim)
+                    yesil_alani = yesil_kes.area
+
+            yesil_orani = yesil_alani / kesisim_alani
+
+            # 1 ile sinirla
+            bina_orani = min(1.0, bina_orani)
+            yesil_orani = min(1.0, yesil_orani)
+
+            # Geometriyi EPSG:4326'ya geri projekte et
+            kesisim_4326 = transform(transformer_ters.transform, kesisim)
+
+            hucre_verisi = {
+                "sinir": kesisim_4326.__geo_interface__,
+                "yesil_alan_orani": float(yesil_orani),
+                "bina_yogunlugu": float(bina_orani),
+            }
+            hucreler.append(hucre_verisi)
+
+            y += hucre_metre
+        x += hucre_metre
+
+    return hucreler
 
 
 def olcekle_maruziyet(yogunluklar: List[float], alt_sinir: float) -> List[float]:
@@ -456,9 +576,13 @@ def main():
 
     # Yapılandırmayı yükle (yerleşim zarfı yarıçapı)
     try:
-        r_metre, kume_sayisi, ufuk_yil, maruziyet_alt_siniri = ayarlari_yukle()
+        r_metre, kume_sayisi, ufuk_yil, maruziyet_alt_siniri, izgara_hucre_metre = ayarlari_yukle()
         print(
             f"Yerlesim zarfi tampon yaricapi: {r_metre} m (kaynak: web/src/ayarlar.json)",
+            file=sys.stderr,
+        )
+        print(
+            f"Izgara hucre boyutu: {izgara_hucre_metre} m",
             file=sys.stderr,
         )
     except Exception as e:
@@ -480,8 +604,9 @@ def main():
     # Nüfus anahtarlarını normalleştirilmiş halde tut (eşleştirme için)
     nufus_norm_anahtarlar = {ad_normallestir(k): k for k in nufus_mahalleler.keys()}
 
-    # 2. Coğrafi dönüşüm nesnesi
+    # 2. Coğrafi dönüşüm nesneleri
     transformer = projeksiyon_transformatörü()
+    transformer_ters = projeksiyon_transformatoru_ters()
 
     # 3. İlçe relation ID'sini bul
     print("İlçe relation ID'si sorgulanıyor...")
@@ -542,6 +667,8 @@ def main():
 
     # 5. Her mahalleyi işle
     sonuclar: List[dict] = []
+    izgara_sonuclari: Dict[str, dict] = {}
+
 
     for sira, rel in enumerate(mahalleler_gecerli, start=1):
         mahalle_id = rel["id"]
@@ -622,7 +749,16 @@ def main():
             return 1
 
         try:
-            bina_orani, yesil_orani, zarf_alani_m2 = bina_yesil_oranlari_hesapla(
+            (
+                bina_orani,
+                yesil_orani,
+                zarf_alani_m2,
+                bina_birlesimi_sinir_ici,
+                yesil_birlesimi,
+                zarf_geom,
+                bina_geometrileri_ham,
+                yesil_geometrileri_ham,
+            ) = bina_yesil_oranlari_hesapla(
                 gjson_fc, alan_m2, transformer, sinir_geom_projekte, r_metre
             )
         except ValueError as e:
@@ -643,6 +779,30 @@ def main():
             return 1
 
         nufus_anahtar = nufus_norm_anahtarlar[norm_osm]
+        # --- Izgara katmani (mahalle ici 100m x 100m grid) ---
+        try:
+            grid_hucreleri = izgara_uret_ve_olc(
+                zarf_geom,
+                bina_geometrileri_ham,
+                yesil_geometrileri_ham,
+                transformer_ters,
+                hucre_metre=izgara_hucre_metre,
+            )
+            izgara_sonuclari[nufus_anahtar] = {
+                "hucre_metre": izgara_hucre_metre,
+                "hucreler": grid_hucreleri,
+            }
+            print(
+                f"  Izgara: {len(grid_hucreleri)} hucre olusturuldu.",
+                file=sys.stderr,
+            )
+        except Exception as e:
+            print(
+                f"HATA: '{osm_ad}' icin izgara olusturulamadi: {e}",
+                file=sys.stderr,
+            )
+            return 1
+        # ---------------------------------------------------------
         nufus_kaydi = nufus_mahalleler[nufus_anahtar]
         nufus = nufus_kaydi["guncel"]
         nufus_serisi = nufus_kaydi["seri"]
@@ -744,7 +904,7 @@ def main():
               f"ai_onbellek alanı boş bırakıldı (REQ-F-23).",
               file=sys.stderr)
 
-    # 7. Atomik yazma
+    # 7. Atomik yazma (veri.json)
     cikti_yolu = os.path.join("veri", "veri.json")
     gecici_yol = cikti_yolu + ".tmp"
     try:
@@ -754,6 +914,18 @@ def main():
         print(f"\nveri.json başarıyla yazıldı ({len(sonuclar)} mahalle).")
     except Exception as e:
         print(f"HATA: veri.json yazılamadı: {e}", file=sys.stderr)
+        return 1
+
+    # 8. Izgara (grid) verilerini atomik yaz
+    cikti_yolu_izgara = os.path.join("veri", "izgara.json")
+    gecici_yol_izgara = cikti_yolu_izgara + ".tmp"
+    try:
+        with open(gecici_yol_izgara, "w", encoding="utf-8") as f:
+            json.dump(izgara_sonuclari, f, ensure_ascii=False, indent=2)
+        os.replace(gecici_yol_izgara, cikti_yolu_izgara)
+        print(f"izgara.json başarıyla yazıldı ({len(izgara_sonuclari)} mahalle).")
+    except Exception as e:
+        print(f"HATA: izgara.json yazılamadı: {e}", file=sys.stderr)
         return 1
 
     return 0

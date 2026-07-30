@@ -16,5 +16,6 @@
     "1": { "etiket": "Seyrek yapili", "mudahale": "Agaclandirma koridoru, uzun vadeli yatirim" },
     "2": { "etiket": "Yogun yapili", "mudahale": "Cati bahcesi ve golgelik yapi, dikime alan sinirli" }
   },
-  "yerlesim_zarfi_r_metre": 100
+  "yerlesim_zarfi_r_metre": 100,
+  "izgara_hucre_metre": 100
 }

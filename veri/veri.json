@@ -1414,14 +1414,7 @@
         ]
       ]
     },
-    "ai_onbellek": {
-      "tipoloji": 1,
-      "projeksiyon_nufus": {
-        "2030": 1188
-      },
-      "_uretim_zamani": "2026-07-30T07:52:07.228257+00:00",
-      "_servis_surumu": "1.0.0"
-    }
+    "ai_onbellek": {}
   },
   {
     "ad": "Basak",
@@ -2536,14 +2529,7 @@
         ]
       ]
     },
-    "ai_onbellek": {
-      "tipoloji": 0,
-      "projeksiyon_nufus": {
-        "2030": 72819
-      },
-      "_uretim_zamani": "2026-07-30T07:52:07.228257+00:00",
-      "_servis_surumu": "1.0.0"
-    }
+    "ai_onbellek": {}
   },
   {
     "ad": "Ziya Gokalp",
@@ -3466,14 +3452,7 @@
         ]
       ]
     },
-    "ai_onbellek": {
-      "tipoloji": 1,
-      "projeksiyon_nufus": {
-        "2030": 39587
-      },
-      "_uretim_zamani": "2026-07-30T07:52:07.228257+00:00",
-      "_servis_surumu": "1.0.0"
-    }
+    "ai_onbellek": {}
   },
   {
     "ad": "Basaksehir",
@@ -3884,14 +3863,7 @@
         ]
       ]
     },
-    "ai_onbellek": {
-      "tipoloji": 0,
-      "projeksiyon_nufus": {
-        "2030": 85649
-      },
-      "_uretim_zamani": "2026-07-30T07:52:07.228257+00:00",
-      "_servis_surumu": "1.0.0"
-    }
+    "ai_onbellek": {}
   },
   {
     "ad": "Guvercintepe",
@@ -4866,14 +4838,7 @@
         ]
       ]
     },
-    "ai_onbellek": {
-      "tipoloji": 2,
-      "projeksiyon_nufus": {
-        "2030": 95653
-      },
-      "_uretim_zamani": "2026-07-30T07:52:07.228257+00:00",
-      "_servis_surumu": "1.0.0"
-    }
+    "ai_onbellek": {}
   },
   {
     "ad": "Altinsehir",
@@ -5196,14 +5161,7 @@
         ]
       ]
     },
-    "ai_onbellek": {
-      "tipoloji": 2,
-      "projeksiyon_nufus": {
-        "2030": 36965
-      },
-      "_uretim_zamani": "2026-07-30T07:52:07.228257+00:00",
-      "_servis_surumu": "1.0.0"
-    }
+    "ai_onbellek": {}
   },
   {
     "ad": "Kayabasi",
@@ -6694,14 +6652,7 @@
         ]
       ]
     },
-    "ai_onbellek": {
-      "tipoloji": 0,
-      "projeksiyon_nufus": {
-        "2030": 150029
-      },
-      "_uretim_zamani": "2026-07-30T07:52:07.228257+00:00",
-      "_servis_surumu": "1.0.0"
-    }
+    "ai_onbellek": {}
   },
   {
     "ad": "Sahintepe",
@@ -8040,14 +7991,7 @@
         ]
       ]
     },
-    "ai_onbellek": {
-      "tipoloji": 0,
-      "projeksiyon_nufus": {
-        "2030": 29372
-      },
-      "_uretim_zamani": "2026-07-30T07:52:07.228257+00:00",
-      "_servis_surumu": "1.0.0"
-    }
+    "ai_onbellek": {}
   },
   {
     "ad": "Bahcesehir 2. Kisim",
@@ -8998,14 +8942,7 @@
         ]
       ]
     },
-    "ai_onbellek": {
-      "tipoloji": 0,
-      "projeksiyon_nufus": {
-        "2030": 80879
-      },
-      "_uretim_zamani": "2026-07-30T07:52:07.228257+00:00",
-      "_servis_surumu": "1.0.0"
-    }
+    "ai_onbellek": {}
   },
   {
     "ad": "Bahcesehir 1. Kisim",
@@ -10064,13 +10001,6 @@
         ]
       ]
     },
-    "ai_onbellek": {
-      "tipoloji": 1,
-      "projeksiyon_nufus": {
-        "2030": 50078
-      },
-      "_uretim_zamani": "2026-07-30T07:52:07.228257+00:00",
-      "_servis_surumu": "1.0.0"
-    }
+    "ai_onbellek": {}
   }
 ]
