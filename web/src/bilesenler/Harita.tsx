@@ -1,15 +1,20 @@
-import { useMemo } from 'react';
+import { useMemo, type ComponentType } from 'react';
 import {
   MapContainer,
   TileLayer,
   GeoJSON,
 } from 'react-leaflet';
+import type { GeoJSONProps } from 'react-leaflet';
 import type { FeatureCollection, Feature, Geometry } from 'geojson';
 import L from 'leaflet';
 import { riskRengi, KOVA_RENKLERI, golgeRengi } from '../renk';
 import type { Mahalle, IzgaraHucre } from '../veriKaynagi';
 import { izgaraGeoJsonOlustur } from '../skorHesapla';
 import { dosyaIndir, dosyaAdiGuvenliHaleGetir } from '../dosyaIndir';
+
+const IzgaraGeoJSON = GeoJSON as unknown as ComponentType<
+  GeoJSONProps & { renderer?: L.Renderer }
+>;
 
 interface HaritaProps {
   mahalleler: Mahalle[];
@@ -80,6 +85,8 @@ export default function Harita({
     const max = Math.max(...tehlikeler);
     return { min, max };
   }, [izgaraKatmani]);
+
+  const canvasRenderer = useMemo(() => L.canvas(), []);
 
   const izgaraStyleFn = useMemo(
     () => (feature: Feature | undefined) => {
@@ -170,7 +177,6 @@ export default function Harita({
           zoomControl={true}
           scrollWheelZoom={true}
           dragging={false}
-          preferCanvas={true}
           style={{ background: 'oklch(0.9 0.008 260)' }}
         >
           <TileLayer
@@ -184,10 +190,11 @@ export default function Harita({
             onEachFeature={onEachFeature}
           />
           {izgaraFeatureCollection && izgaraMinMax && (
-            <GeoJSON
+            <IzgaraGeoJSON
               key={`izgara-${izgaraKatmani!.ad}`}
               data={izgaraFeatureCollection as unknown as GeoJSON.GeoJsonObject}
               style={izgaraStyleFn}
+              renderer={canvasRenderer}
             />
           )}
         </MapContainer>
