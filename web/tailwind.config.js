@@ -16,6 +16,7 @@ export default {
         accent: 'oklch(0.6 0.14 150)',
         kurum: 'oklch(0.42 0.08 205)',
         'kurum-tint': 'oklch(0.94 0.02 205)',
+        'kurum-muted': 'oklch(0.85 0.02 205)',
         'risk-dusuk': 'oklch(0.62 0.12 225)',
         'risk-orta': 'oklch(0.78 0.15 90)',
         'risk-yuksek': 'oklch(0.63 0.19 25)',
