@@ -345,11 +345,14 @@ export default function App() {
   return (
     <div className="h-screen flex flex-col bg-page text-ink font-sans overflow-hidden">
       <header className="px-7 py-4 border-b border-contur flex items-baseline gap-4 flex-shrink-0">
-        <h1 className="text-lg font-semibold tracking-tight">
-          Kentsel Isı Riski Önceliklendirme Paneli
+        <h1 className="text-lg font-semibold tracking-tight text-kurum">
+          Başakşehir Isı Adası Haritası
         </h1>
+        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-kurum-tint text-kurum border border-kurum">
+          Faz 1
+        </span>
         <span className="text-sm text-muted">
-          Başakşehir Belediyesi – Çevre ve Park Bahçeler Birimi – Faz 1 Karar Destek
+          Başakşehir Belediyesi – Çevre ve Park Bahçeler Birimi – Karar Destek
         </span>
       </header>
 
