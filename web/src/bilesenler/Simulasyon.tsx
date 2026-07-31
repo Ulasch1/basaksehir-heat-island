@@ -7,6 +7,7 @@ interface SimulasyonProps {
   onSimYesilChange: (v: number) => void;
   nufusSimYeniRisk: number | null;
   nufusSimYeniRank: number | null;
+  yesilSimYeniRank: number | null;
   seciliBaseRank: number | null;
   simNufusYuzde: number;
   onSimNufusYuzdeChange: (v: number) => void;
@@ -24,6 +25,7 @@ export default function Simulasyon({
   onSimYesilChange,
   nufusSimYeniRisk,
   nufusSimYeniRank,
+  yesilSimYeniRank,
   seciliBaseRank,
   simNufusYuzde,
   onSimNufusYuzdeChange,
@@ -63,6 +65,12 @@ export default function Simulasyon({
                 <span className="text-accent font-mono">
                   {yesilSimSonuc.risk.toFixed(3)}
                 </span>
+                {seciliBaseRank !== null && yesilSimYeniRank !== null && (
+                  <span>
+                    {' '}
+                    · Sıra: {seciliBaseRank} → {yesilSimYeniRank}
+                  </span>
+                )}
               </div>
             )}
           </div>

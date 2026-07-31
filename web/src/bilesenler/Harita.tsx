@@ -16,7 +16,7 @@ interface HaritaProps {
   seciliAd: string | null;
   onSecim: (ad: string) => void;
   butceSecilenAdlari: Set<string>;
-  izgaraKatmani: { ad: string; hucreler: IzgaraHucre[]; tehlikeler: number[] } | null;
+  izgaraKatmani: { ad: string; hucreler: IzgaraHucre[]; tehlikeler: number[]; simulasyonAktif: boolean } | null;
 }
 
 export default function Harita({
@@ -205,6 +205,9 @@ export default function Harita({
               background: `linear-gradient(to right, ${golgeRengi(izgaraMinMax.min, izgaraMinMax.min, izgaraMinMax.max)}, ${golgeRengi((izgaraMinMax.min + izgaraMinMax.max) / 2, izgaraMinMax.min, izgaraMinMax.max)}, ${golgeRengi(izgaraMinMax.max, izgaraMinMax.min, izgaraMinMax.max)})`,
             }}
           />
+          {izgaraKatmani.simulasyonAktif && (
+            <span className="italic">(yeşil alan artışı simülasyonu uygulanıyor)</span>
+          )}
         </div>
       )}
     </div>

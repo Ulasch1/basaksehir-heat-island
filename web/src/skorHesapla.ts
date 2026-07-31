@@ -168,3 +168,94 @@ export function hesaplaHucreTehlikeleri(
     hesaplaTehlike(h.yesil_alan_orani, h.bina_yogunlugu, agirliklar)
   );
 }
+
+/**
+ * Yesil alan simulasyonu SADECE secili mahallenin riskini degistirir, digerleri
+ * baseline'da sabit kalir. Bu fonksiyon secili mahallenin yeni riskini mevcutSkorlar
+ * dizisine uygulayip, risk azalan sirada yeniden siraladiginda secili mahallenin
+ * yeni sirasini (1-indexed) dondurur.
+ */
+export function hesaplaSimuleRank(
+  mevcutSkorlar: MahalleSkoru[],
+  seciliAd: string,
+  yeniRisk: number
+): number | null {
+  const guncellenmis = mevcutSkorlar.map((s) =>
+    s.ad === seciliAd ? { ...s, risk: yeniRisk } : s
+  );
+  const sirali = [...guncellenmis].sort((a, b) => b.risk - a.risk);
+  const idx = sirali.findIndex((s) => s.ad === seciliAd);
+  return idx >= 0 ? idx + 1 : null;
+}
+
+/**
+ * Yesil alan artisi simulasyonunu HUCRE DUZEYINDE uygular: eklenen yesil alan
+ * TUM hucrelere esit dagitilmaz, en yuksek tehlikeli (en "kirmizi") hucrelere
+ * oncelik verilir (gercekci mudahale senaryosu: en kotu yerler once iyilesir).
+ * Hucreler esit agirlikli kabul edilir (her hucre = 1 birim), gercek m2 alani
+ * veri semasinda yok.
+ *
+ * Mantik:
+ * 1. delta = artisPuani / 100
+ * 2. butce = delta * hucreler.length (toplam "yesillendirme butcesi", hucre-birimi)
+ * 3. Hucreler BASELINE tehlikelerine gore AZALAN sirada siralanir (en kirmizi once),
+ *    orijinal index korunur.
+ * 4. Sirali listede gezilir: ihtiyac = 1 - yesil_alan_orani, alinan = min(ihtiyac,
+ *    kalanButce), yeniYesil = yesil_alan_orani + alinan,
+ *    yeniBina = max(0, bina_yogunlugu - katsayi * alinan), kalanButce -= alinan.
+ *    Butce biterse (kalanButce <= 0) kalan (daha az kirmizi) hucreler DEGISMEDEN kalir.
+ * 5. Her hucre icin yeni tehlike hesaplaTehlike(yeniYesil, yeniBina, agirliklar) ile
+ *    hesaplanir.
+ * 6. Sonuc ORIJINAL sirada (girdi dizisiyle ayni index sirasinda) dondurulur; siralama
+ *    sadece dahili islem icindir, cikti sirasi bozulmaz.
+ *
+ * artisPuani === 0 ise tum hucreler DEGISMEDEN (baseline tehlike ile) doner.
+ */
+export function simuleHucreYesillestirme(
+  hucreler: { yesil_alan_orani: number; bina_yogunlugu: number }[],
+  artisPuani: number,
+  katsayi: number,
+  agirliklar: TehlikeAgirliklari
+): { yesil_alan_orani: number; bina_yogunlugu: number; tehlike: number }[] {
+  if (hucreler.length === 0) return [];
+
+  if (artisPuani === 0) {
+    return hucreler.map((h) => ({
+      yesil_alan_orani: h.yesil_alan_orani,
+      bina_yogunlugu: h.bina_yogunlugu,
+      tehlike: hesaplaTehlike(h.yesil_alan_orani, h.bina_yogunlugu, agirliklar),
+    }));
+  }
+
+  const delta = artisPuani / 100;
+  let kalanButce = delta * hucreler.length;
+
+  const baselineTehlikeler = hucreler.map((h) =>
+    hesaplaTehlike(h.yesil_alan_orani, h.bina_yogunlugu, agirliklar)
+  );
+
+  const indeksli = hucreler.map((h, i) => ({ ...h, orijinalIndex: i, baseline: baselineTehlikeler[i] }));
+  indeksli.sort((a, b) => b.baseline - a.baseline);
+
+  const sonuc: { yesil_alan_orani: number; bina_yogunlugu: number; tehlike: number }[] =
+    new Array(hucreler.length);
+
+  for (const h of indeksli) {
+    let yeniYesil = h.yesil_alan_orani;
+    let yeniBina = h.bina_yogunlugu;
+    if (kalanButce > 0) {
+      const ihtiyac = 1 - h.yesil_alan_orani;
+      const alinan = Math.min(ihtiyac, kalanButce);
+      yeniYesil = h.yesil_alan_orani + alinan;
+      yeniBina = Math.max(0, h.bina_yogunlugu - katsayi * alinan);
+      kalanButce -= alinan;
+    }
+    sonuc[h.orijinalIndex] = {
+      yesil_alan_orani: yeniYesil,
+      bina_yogunlugu: yeniBina,
+      tehlike: hesaplaTehlike(yeniYesil, yeniBina, agirliklar),
+    };
+  }
+
+  return sonuc;
+}

@@ -10,6 +10,8 @@ import {
   hesaplaMevcutSkorlar,
   hesaplaProjeksiyonRiski,
   tehlikeRiskUyusmazliginiBul,
+  hesaplaSimuleRank,
+  simuleHucreYesillestirme,
   type MahalleVeri,
   type MahalleSkoru,
   type ProjeksiyonRiski,
@@ -210,9 +212,17 @@ export default function App() {
     if (!izgaraGoster || !izgaraVeri || izgaraVeri.ad !== seciliAd || izgaraVeri.hucreler.length === 0) {
       return null;
     }
-    const tehlikeler = hesaplaHucreTehlikeleri(izgaraVeri.hucreler, agirliklar);
-    return { ad: izgaraVeri.ad, hucreler: izgaraVeri.hucreler, tehlikeler };
-  }, [izgaraGoster, izgaraVeri, seciliAd, agirliklar]);
+    const simulasyonAktif = simYesil > 0;
+    const tehlikeler = simulasyonAktif
+      ? simuleHucreYesillestirme(
+          izgaraVeri.hucreler,
+          simYesil,
+          ayarlar.simulasyon_bina_azaltma_katsayisi,
+          agirliklar
+        ).map((h) => h.tehlike)
+      : hesaplaHucreTehlikeleri(izgaraVeri.hucreler, agirliklar);
+    return { ad: izgaraVeri.ad, hucreler: izgaraVeri.hucreler, tehlikeler, simulasyonAktif };
+  }, [izgaraGoster, izgaraVeri, seciliAd, agirliklar, simYesil]);
 
   const yesilSimSonuc = useMemo(() => {
     if (!seciliMahalle || !seciliSkor) return null;
@@ -259,6 +269,11 @@ export default function App() {
     const idx = sirali.findIndex((s) => s.ad === seciliAd);
     return idx >= 0 ? idx + 1 : null;
   }, [nufusSimSonuclari, seciliAd]);
+
+  const yesilSimYeniRank = useMemo(() => {
+    if (!yesilSimSonuc || !seciliAd || mevcutSkorlar.length === 0) return null;
+    return hesaplaSimuleRank(mevcutSkorlar, seciliAd, yesilSimSonuc.risk);
+  }, [mevcutSkorlar, seciliAd, yesilSimSonuc]);
 
   const butceSonuc = useMemo(() => {
     if (mevcutSkorlar.length === 0) return { secilenler: [] as number[], kapsananRiskYuzdesi: 0 };
@@ -384,6 +399,7 @@ export default function App() {
             onSimYesilChange={setSimYesil}
             nufusSimYeniRisk={nufusSimYeniRisk}
             nufusSimYeniRank={nufusSimYeniRank}
+            yesilSimYeniRank={yesilSimYeniRank}
             seciliBaseRank={seciliRank}
             simNufusYuzde={simNufusYuzde}
             onSimNufusYuzdeChange={setSimNufusYuzde}

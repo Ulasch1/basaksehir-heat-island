@@ -4,6 +4,8 @@ import {
   hesaplaProjeksiyonRiski,
   tehlikeRiskUyusmazliginiBul,
   hesaplaHucreTehlikeleri,
+  hesaplaSimuleRank,
+  simuleHucreYesillestirme,
 } from '../skorHesapla';
 import type { MahalleVeri, SkorAyarlari } from '../skorHesapla';
 import type { TehlikeAgirliklari } from '../skor';
@@ -203,5 +205,111 @@ describe('hesaplaHucreTehlikeleri', () => {
     expect(sonuclar[0]).toBeCloseTo(0.9, 5);
     expect(sonuclar[1]).toBeCloseTo(0.5, 5);
     expect(sonuclar[2]).toBeCloseTo(0.1, 5);
+  });
+});
+
+describe('hesaplaSimuleRank', () => {
+  it('secili mahallenin riski yukselince sirasi 1. olur (elle dogrulanmis)', () => {
+    // A: y=0.2,b=0.8,n=100 -> tehlike=0.8, yogunluk=100 (min=100,max=300) -> maruziyet=0.1, risk=0.08
+    // B: y=0.5,b=0.5,n=200 -> tehlike=0.5, yogunluk=200 -> maruziyet=0.55, risk=0.275
+    // C: y=0.8,b=0.2,n=300 -> tehlike=0.2, yogunluk=300 -> maruziyet=1.0, risk=0.2
+    // Baseline siralama (azalan risk): B(0.275) > C(0.2) > A(0.08)
+    const testMahalleler: MahalleVeri[] = [
+      { ad: 'A', yesilAlanOrani: 0.2, binaYogunlugu: 0.8, nufus: 100, zarfAlanKm2: 1.0 },
+      { ad: 'B', yesilAlanOrani: 0.5, binaYogunlugu: 0.5, nufus: 200, zarfAlanKm2: 1.0 },
+      { ad: 'C', yesilAlanOrani: 0.8, binaYogunlugu: 0.2, nufus: 300, zarfAlanKm2: 1.0 },
+    ];
+    const mevcutSkorlar = hesaplaMevcutSkorlar(testMahalleler, VARSAYILAN_AYARLAR);
+    expect(mevcutSkorlar[0].risk).toBeCloseTo(0.08, 5);
+    expect(mevcutSkorlar[1].risk).toBeCloseTo(0.275, 5);
+    expect(mevcutSkorlar[2].risk).toBeCloseTo(0.2, 5);
+
+    // A'nin riskini 0.3'e cikarirsak yeni siralama: A(0.3) > B(0.275) > C(0.2) -> A 1. sirada
+    const yeniSira = hesaplaSimuleRank(mevcutSkorlar, 'A', 0.3);
+    expect(yeniSira).toBe(1);
+  });
+
+  it('diger mahallelerin riskleri etkilenmez, girdi dizisi mutate edilmez', () => {
+    const testMahalleler: MahalleVeri[] = [
+      { ad: 'X', yesilAlanOrani: 0.3, binaYogunlugu: 0.7, nufus: 500, zarfAlanKm2: 1.0 },
+      { ad: 'Y', yesilAlanOrani: 0.6, binaYogunlugu: 0.4, nufus: 600, zarfAlanKm2: 1.0 },
+    ];
+    const mevcutSkorlar = hesaplaMevcutSkorlar(testMahalleler, VARSAYILAN_AYARLAR);
+    const yedekRiskler = mevcutSkorlar.map((s) => s.risk);
+    hesaplaSimuleRank(mevcutSkorlar, 'X', 0.999);
+    mevcutSkorlar.forEach((s, i) => {
+      expect(s.risk).toBeCloseTo(yedekRiskler[i], 10);
+    });
+  });
+
+  it('seciliAd mevcutSkorlar icinde bulunamazsa null doner', () => {
+    const testMahalleler: MahalleVeri[] = [
+      { ad: 'P', yesilAlanOrani: 0.4, binaYogunlugu: 0.6, nufus: 200, zarfAlanKm2: 1.0 },
+    ];
+    const mevcutSkorlar = hesaplaMevcutSkorlar(testMahalleler, VARSAYILAN_AYARLAR);
+    expect(hesaplaSimuleRank(mevcutSkorlar, 'YokMahalle', 0.9)).toBeNull();
+  });
+});
+
+describe('simuleHucreYesillestirme', () => {
+  const agirliklar: TehlikeAgirliklari = { yesilAlan: 0.5, binaYogunlugu: 0.5 };
+
+  it('artisPuani=0 iken tum hucreler baseline tehlike ile aynen doner', () => {
+    const hucreler = [
+      { yesil_alan_orani: 0.1, bina_yogunlugu: 0.9 },
+      { yesil_alan_orani: 0.5, bina_yogunlugu: 0.5 },
+      { yesil_alan_orani: 0.8, bina_yogunlugu: 0.2 },
+    ];
+    const sonuc = simuleHucreYesillestirme(hucreler, 0, 1.0, agirliklar);
+    expect(sonuc).toHaveLength(3);
+    hucreler.forEach((h, i) => {
+      expect(sonuc[i].yesil_alan_orani).toBeCloseTo(h.yesil_alan_orani, 10);
+      expect(sonuc[i].bina_yogunlugu).toBeCloseTo(h.bina_yogunlugu, 10);
+    });
+    expect(sonuc[0].tehlike).toBeCloseTo(0.9, 5);
+    expect(sonuc[1].tehlike).toBeCloseTo(0.5, 5);
+    expect(sonuc[2].tehlike).toBeCloseTo(0.2, 5);
+  });
+
+  it('butce sinirliyken en kirmizi hucre once (kismen) iyilesir, en az kirmizi hucreye dokunulmaz', () => {
+    const hucreler = [
+      { yesil_alan_orani: 0.1, bina_yogunlugu: 0.9 },
+      { yesil_alan_orani: 0.5, bina_yogunlugu: 0.5 },
+      { yesil_alan_orani: 0.9, bina_yogunlugu: 0.1 },
+    ];
+    const sonuc = simuleHucreYesillestirme(hucreler, 25, 1.0, agirliklar);
+    expect(sonuc[0].yesil_alan_orani).toBeCloseTo(0.85, 5);
+    expect(sonuc[0].bina_yogunlugu).toBeCloseTo(0.15, 5);
+    expect(sonuc[1].yesil_alan_orani).toBeCloseTo(0.5, 5);
+    expect(sonuc[1].bina_yogunlugu).toBeCloseTo(0.5, 5);
+    expect(sonuc[1].tehlike).toBeCloseTo(0.5, 5);
+    expect(sonuc[2].yesil_alan_orani).toBeCloseTo(0.9, 5);
+    expect(sonuc[2].bina_yogunlugu).toBeCloseTo(0.1, 5);
+    expect(sonuc[2].tehlike).toBeCloseTo(0.1, 5);
+  });
+
+  it('bina yogunlugu katsayiya gore azalir ve 0 altina inmez (clamp)', () => {
+    const hucreler = [{ yesil_alan_orani: 0.2, bina_yogunlugu: 0.6 }];
+    const sonuc = simuleHucreYesillestirme(hucreler, 100, 1.0, agirliklar);
+    expect(sonuc[0].yesil_alan_orani).toBeCloseTo(1.0, 5);
+    expect(sonuc[0].bina_yogunlugu).toBeCloseTo(0, 5);
+
+    const sonuc2 = simuleHucreYesillestirme(hucreler, 100, 0.25, agirliklar);
+    expect(sonuc2[0].bina_yogunlugu).toBeCloseTo(0.4, 5);
+  });
+
+  it('cikti sirasi girdi sirasiyla ayni kalir (siralama sadece dahili islem icin)', () => {
+    const hucreler = [
+      { yesil_alan_orani: 0.9, bina_yogunlugu: 0.1 },
+      { yesil_alan_orani: 0.1, bina_yogunlugu: 0.9 },
+      { yesil_alan_orani: 0.5, bina_yogunlugu: 0.5 },
+    ];
+    const sonuc = simuleHucreYesillestirme(hucreler, 5, 1.0, agirliklar);
+    expect(sonuc).toHaveLength(3);
+    expect(sonuc[0].yesil_alan_orani).toBeCloseTo(0.9, 5);
+    expect(sonuc[1].yesil_alan_orani).toBeCloseTo(0.25, 5);
+    expect(sonuc[1].bina_yogunlugu).toBeCloseTo(0.75, 5);
+    expect(sonuc[2].yesil_alan_orani).toBeCloseTo(0.5, 5);
+    expect(sonuc[2].bina_yogunlugu).toBeCloseTo(0.5, 5);
   });
 });
