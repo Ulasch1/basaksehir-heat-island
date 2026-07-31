@@ -6,8 +6,12 @@ import {
   hesaplaHucreTehlikeleri,
   hesaplaSimuleRank,
   simuleHucreYesillestirme,
+  siralaOncelikListesi,
+  oncelikCsvSatirlariOlustur,
+  oncelikCsvMetniOlustur,
+  izgaraGeoJsonOlustur,
 } from '../skorHesapla';
-import type { MahalleVeri, SkorAyarlari } from '../skorHesapla';
+import type { MahalleVeri, MahalleSkoru, SkorAyarlari } from '../skorHesapla';
 import type { TehlikeAgirliklari } from '../skor';
 
 // Sabit ayar objesi (ayarlar.json ile ayni yapi)
@@ -311,5 +315,183 @@ describe('simuleHucreYesillestirme', () => {
     expect(sonuc[1].bina_yogunlugu).toBeCloseTo(0.75, 5);
     expect(sonuc[2].yesil_alan_orani).toBeCloseTo(0.5, 5);
     expect(sonuc[2].bina_yogunlugu).toBeCloseTo(0.5, 5);
+  });
+});
+
+describe('siralaOncelikListesi', () => {
+  const FIXTURE: MahalleSkoru[] = [
+    {
+      ad: 'A',
+      yesilAlanOrani: 0.1,
+      binaYogunlugu: 0.7,
+      nufus: 100,
+      zarfAlanKm2: 1.0,
+      tehlike: 0.8,
+      maruziyet: 0.1,
+      risk: 0.08,
+    },
+    {
+      ad: 'B',
+      yesilAlanOrani: 0.5,
+      binaYogunlugu: 0.6,
+      nufus: 200,
+      zarfAlanKm2: 1.0,
+      tehlike: 0.55,
+      maruziyet: 0.55,
+      risk: 0.3025,
+    },
+    {
+      ad: 'C',
+      yesilAlanOrani: 0.8,
+      binaYogunlugu: 0.2,
+      nufus: 300,
+      zarfAlanKm2: 1.0,
+      tehlike: 0.2,
+      maruziyet: 1.0,
+      risk: 0.2,
+    },
+  ];
+
+  it('risk modunda azalan risk sira', () => {
+    const sirali = siralaOncelikListesi(FIXTURE, 'risk');
+    expect(sirali.map((s) => s.ad)).toEqual(['B', 'C', 'A']);
+  });
+
+  it('yesil modunda azalan yesil alan eksikligi sira', () => {
+    const sirali = siralaOncelikListesi(FIXTURE, 'yesil');
+    // (1 - o): A=0.9, B=0.5, C=0.2 -> A, B, C
+    expect(sirali.map((s) => s.ad)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('bina modunda azalan bina yogunlugu sira', () => {
+    const sirali = siralaOncelikListesi(FIXTURE, 'bina');
+    // bina: A=0.7, B=0.6, C=0.2 -> A, B, C
+    expect(sirali.map((s) => s.ad)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('farkli modlar farkli siralar uretir', () => {
+    const riskSirali = siralaOncelikListesi(FIXTURE, 'risk');
+    const yesilSirali = siralaOncelikListesi(FIXTURE, 'yesil');
+    expect(riskSirali.map((s) => s.ad)).not.toEqual(yesilSirali.map((s) => s.ad));
+  });
+
+  it('girdi dizisi mutasyona ugramaz', () => {
+    const kopyaOnce = [...FIXTURE];
+    siralaOncelikListesi(FIXTURE, 'bina');
+    expect(FIXTURE.map((s) => s.ad)).toEqual(kopyaOnce.map((s) => s.ad));
+  });
+});
+
+describe('oncelikCsvSatirlariOlustur / oncelikCsvMetniOlustur', () => {
+  const skorlar: MahalleSkoru[] = [
+    {
+      ad: 'MahalleX',
+      yesilAlanOrani: 0.3,
+      binaYogunlugu: 0.4,
+      nufus: 500,
+      zarfAlanKm2: 2.0,
+      tehlike: 0.65,
+      maruziyet: 0.3,
+      risk: 0.195,
+    },
+    {
+      ad: 'MahalleY',
+      yesilAlanOrani: 0.6,
+      binaYogunlugu: 0.5,
+      nufus: 800,
+      zarfAlanKm2: 1.5,
+      tehlike: 0.45,
+      maruziyet: 0.8,
+      risk: 0.36,
+    },
+  ];
+
+  const tipolojiByAd = { MahalleX: 0 };
+  const tipolojiEslemesi = { '0': { etiket: 'Karma doku', mudahale: '...' } };
+
+  it('satir sayisi ve sira dogru', () => {
+    const satirlar = oncelikCsvSatirlariOlustur(skorlar, tipolojiByAd, tipolojiEslemesi, false);
+    expect(satirlar).toHaveLength(2);
+    expect(satirlar[0].sira).toBe(1);
+    expect(satirlar[1].sira).toBe(2);
+  });
+
+  it('sayisal alanlar toFixed(3) formatinda', () => {
+    const satirlar = oncelikCsvSatirlariOlustur(skorlar, {}, {}, false);
+    expect(satirlar[0].tehlike).toBe('0.650');
+    expect(satirlar[0].maruziyet).toBe('0.300');
+    expect(satirlar[0].risk).toBe('0.195');
+  });
+
+  it('tipolojili ve tipolojisiz mahalleler dogru etiket alir', () => {
+    const satirlar = oncelikCsvSatirlariOlustur(skorlar, tipolojiByAd, tipolojiEslemesi, false);
+    expect(satirlar[0].tipoloji).toBe('Karma doku');
+    expect(satirlar[1].tipoloji).toBe('');
+  });
+
+  it('guncel_mi bayragi tipolojiGuncelDegil degiskenine gore belirlenir', () => {
+    const guncel = oncelikCsvSatirlariOlustur(skorlar, tipolojiByAd, tipolojiEslemesi, false);
+    const degil = oncelikCsvSatirlariOlustur(skorlar, tipolojiByAd, tipolojiEslemesi, true);
+    expect(guncel[0].guncel_mi).toBe('evet');
+    expect(degil[0].guncel_mi).toBe('hayir');
+  });
+
+  it('CSV metni dogru header ve satir sayisi', () => {
+    const satirlar = oncelikCsvSatirlariOlustur(skorlar, tipolojiByAd, tipolojiEslemesi, false);
+    const metin = oncelikCsvMetniOlustur(satirlar);
+    const satirlarMetin = metin.split('\n');
+    expect(satirlarMetin[0]).toBe('sira,mahalle,tehlike,maruziyet,risk,tipoloji,guncel_mi');
+    expect(satirlarMetin).toHaveLength(3); // header + 2 satir
+  });
+
+  it('mahalle ve tipoloji alanlari cift tirnak icinde', () => {
+    const satirlar = oncelikCsvSatirlariOlustur(skorlar, tipolojiByAd, tipolojiEslemesi, false);
+    const metin = oncelikCsvMetniOlustur(satirlar);
+    const satirlarMetin = metin.split('\n');
+    expect(satirlarMetin[1]).toContain('"MahalleX"');
+    expect(satirlarMetin[1]).toContain('"Karma doku"');
+  });
+});
+
+describe('izgaraGeoJsonOlustur', () => {
+  const hucre1Sinir = { type: 'Polygon' as const, coordinates: [[[0,0],[1,0],[1,1],[0,0]]] };
+  const hucre2Sinir = { type: 'Polygon' as const, coordinates: [[[2,2],[3,2],[3,3],[2,2]]] };
+
+  const hucreler = [{ sinir: hucre1Sinir }, { sinir: hucre2Sinir }];
+
+  const ozellikler = [
+    { yesil_alan_orani: 0.1, bina_yogunlugu: 0.8, tehlike: 0.9 },
+    { yesil_alan_orani: 0.4, bina_yogunlugu: 0.6, tehlike: 0.5 },
+  ];
+
+  it('FeatureCollection yapisi dogru', () => {
+    const fc = izgaraGeoJsonOlustur(hucreler, ozellikler, false);
+    expect(fc.type).toBe('FeatureCollection');
+    expect(fc.features).toHaveLength(2);
+  });
+
+  it('her feature geometry hucre sinirini tasir', () => {
+    const fc = izgaraGeoJsonOlustur(hucreler, ozellikler, true);
+    expect(fc.features[0].geometry).toEqual(hucre1Sinir);
+    expect(fc.features[1].geometry).toEqual(hucre2Sinir);
+  });
+
+  it('her feature properties degerleri dogru', () => {
+    const fc = izgaraGeoJsonOlustur(hucreler, ozellikler, false);
+    expect(fc.features[0].properties).toEqual({
+      yesil_alan_orani: 0.1,
+      bina_yogunlugu: 0.8,
+      tehlike: 0.9,
+      simulasyon_aktif: false,
+    });
+  });
+
+  it('simulasyon_aktif tum featurelara yansir', () => {
+    const fcTrue = izgaraGeoJsonOlustur(hucreler, ozellikler, true);
+    expect(fcTrue.features[0].properties?.simulasyon_aktif).toBe(true);
+    expect(fcTrue.features[1].properties?.simulasyon_aktif).toBe(true);
+
+    const fcFalse = izgaraGeoJsonOlustur(hucreler, ozellikler, false);
+    expect(fcFalse.features[0].properties?.simulasyon_aktif).toBe(false);
   });
 });

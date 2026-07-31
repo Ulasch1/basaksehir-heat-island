@@ -9,6 +9,8 @@
 
 import { hesaplaTehlike, olcekleMaruziyet, hesaplaRisk, simuleNufus } from './skor';
 import type { TehlikeAgirliklari, MahalleGirdi } from './skor';
+import type { MahalleSinir } from './veriKaynagi';
+import type { Feature, FeatureCollection, Geometry } from 'geojson';
 
 export interface MahalleVeri {
   ad: string;
@@ -258,4 +260,90 @@ export function simuleHucreYesillestirme(
   }
 
   return sonuc;
+}
+
+export type SiralamaModu = 'risk' | 'yesil' | 'bina';
+
+export function siralaOncelikListesi(
+  mevcutSkorlar: MahalleSkoru[],
+  mod: SiralamaModu
+): MahalleSkoru[] {
+  const kopya = [...mevcutSkorlar];
+  if (mod === 'risk') {
+    return kopya.sort((a, b) => b.risk - a.risk);
+  }
+  if (mod === 'yesil') {
+    return kopya.sort((a, b) => (1 - b.yesilAlanOrani) - (1 - a.yesilAlanOrani));
+  }
+  return kopya.sort((a, b) => b.binaYogunlugu - a.binaYogunlugu);
+}
+
+export interface OncelikCsvSatiri {
+  sira: number;
+  mahalle: string;
+  tehlike: string;
+  maruziyet: string;
+  risk: string;
+  tipoloji: string;
+  guncel_mi: string;
+}
+
+export function oncelikCsvSatirlariOlustur(
+  siraliSkorlar: MahalleSkoru[],
+  tipolojiByAd: Record<string, number>,
+  tipolojiEslemesi: Record<string, { etiket: string; mudahale: string }>,
+  tipolojiGuncelDegil: boolean
+): OncelikCsvSatiri[] {
+  return siraliSkorlar.map((s, i) => {
+    const tipolojiIndeks = tipolojiByAd[s.ad];
+    const tipolojiEtiket =
+      tipolojiIndeks != null ? (tipolojiEslemesi[String(tipolojiIndeks)]?.etiket ?? '') : '';
+    return {
+      sira: i + 1,
+      mahalle: s.ad,
+      tehlike: s.tehlike.toFixed(3),
+      maruziyet: s.maruziyet.toFixed(3),
+      risk: s.risk.toFixed(3),
+      tipoloji: tipolojiEtiket,
+      guncel_mi: tipolojiGuncelDegil ? 'hayir' : 'evet',
+    };
+  });
+}
+
+function csvAlaniTirnakla(deger: string): string {
+  return `"${deger.replace(/"/g, '""')}"`;
+}
+
+export function oncelikCsvMetniOlustur(satirlar: OncelikCsvSatiri[]): string {
+  const baslik = 'sira,mahalle,tehlike,maruziyet,risk,tipoloji,guncel_mi';
+  const govde = satirlar.map((s) =>
+    [
+      s.sira,
+      csvAlaniTirnakla(s.mahalle),
+      s.tehlike,
+      s.maruziyet,
+      s.risk,
+      csvAlaniTirnakla(s.tipoloji),
+      s.guncel_mi,
+    ].join(',')
+  );
+  return [baslik, ...govde].join('\n');
+}
+
+export function izgaraGeoJsonOlustur(
+  hucreler: { sinir: MahalleSinir }[],
+  hucreOzellikleri: { yesil_alan_orani: number; bina_yogunlugu: number; tehlike: number }[],
+  simulasyonAktif: boolean
+): FeatureCollection {
+  const features: Feature[] = hucreler.map((h, i) => ({
+    type: 'Feature' as const,
+    geometry: h.sinir as unknown as Geometry,
+    properties: {
+      yesil_alan_orani: hucreOzellikleri[i].yesil_alan_orani,
+      bina_yogunlugu: hucreOzellikleri[i].bina_yogunlugu,
+      tehlike: hucreOzellikleri[i].tehlike,
+      simulasyon_aktif: simulasyonAktif,
+    },
+  }));
+  return { type: 'FeatureCollection', features };
 }

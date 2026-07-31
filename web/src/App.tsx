@@ -12,9 +12,11 @@ import {
   tehlikeRiskUyusmazliginiBul,
   hesaplaSimuleRank,
   simuleHucreYesillestirme,
+  siralaOncelikListesi,
   type MahalleVeri,
   type MahalleSkoru,
   type ProjeksiyonRiski,
+  type SiralamaModu,
 } from './skorHesapla';
 import { simuleYesilAlan, simuleNufus, secBudceKisitli } from './skor';
 import type { MahalleGirdi, TehlikeAgirliklari } from './skor';
@@ -42,6 +44,7 @@ export default function App() {
   const [simYesil, setSimYesil] = useState(0);
   const [simNufusYuzde, setSimNufusYuzde] = useState(0);
   const [simButce, setSimButce] = useState(3);
+  const [siralamaModu, setSiralamaModu] = useState<SiralamaModu>('risk');
 
   const [izgaraGoster, setIzgaraGoster] = useState(false);
   const [izgaraVeri, setIzgaraVeri] = useState<{ ad: string; hucreler: IzgaraHucre[] } | null>(null);
@@ -130,6 +133,11 @@ export default function App() {
     [mevcutSkorlar],
   );
 
+  const oncelikListesiSirali = useMemo<MahalleSkoru[]>(
+    () => siralaOncelikListesi(mevcutSkorlar, siralamaModu),
+    [mevcutSkorlar, siralamaModu],
+  );
+
   const uyusmazlik = useMemo(
     () => tehlikeRiskUyusmazliginiBul(mevcutSkorlar),
     [mevcutSkorlar],
@@ -213,15 +221,21 @@ export default function App() {
       return null;
     }
     const simulasyonAktif = simYesil > 0;
-    const tehlikeler = simulasyonAktif
+    const baseline = hesaplaHucreTehlikeleri(izgaraVeri.hucreler, agirliklar);
+    const hucreOzellikleri = simulasyonAktif
       ? simuleHucreYesillestirme(
           izgaraVeri.hucreler,
           simYesil,
           ayarlar.simulasyon_bina_azaltma_katsayisi,
           agirliklar
-        ).map((h) => h.tehlike)
-      : hesaplaHucreTehlikeleri(izgaraVeri.hucreler, agirliklar);
-    return { ad: izgaraVeri.ad, hucreler: izgaraVeri.hucreler, tehlikeler, simulasyonAktif };
+        )
+      : izgaraVeri.hucreler.map((h, i) => ({
+          yesil_alan_orani: h.yesil_alan_orani,
+          bina_yogunlugu: h.bina_yogunlugu,
+          tehlike: baseline[i],
+        }));
+    const tehlikeler = hucreOzellikleri.map((h) => h.tehlike);
+    return { ad: izgaraVeri.ad, hucreler: izgaraVeri.hucreler, hucreOzellikleri, tehlikeler, simulasyonAktif };
   }, [izgaraGoster, izgaraVeri, seciliAd, agirliklar, simYesil]);
 
   const yesilSimSonuc = useMemo(() => {
@@ -355,7 +369,7 @@ export default function App() {
 
         <div className="flex flex-col gap-4 min-h-0 overflow-y-auto pr-1">
           <OncelikListesi
-            siraliSkorlar={siraliSkorlar}
+            siraliSkorlar={oncelikListesiSirali}
             tipolojiByAd={tipolojiByAd}
             tipolojiEslemesi={
               ayarlar.tipoloji_mudahale_eslemesi as Record<string, TipolojiEslemeKaydi>
@@ -365,6 +379,8 @@ export default function App() {
             seciliAd={seciliAd}
             onSecim={onSecim}
             uyusmazlik={uyusmazlik}
+            siralamaModu={siralamaModu}
+            onSiralamaModuChange={setSiralamaModu}
           />
 
           {seciliMahalle && seciliSkor && (

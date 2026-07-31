@@ -8,6 +8,8 @@ import type { FeatureCollection, Feature, Geometry } from 'geojson';
 import L from 'leaflet';
 import { riskRengi, KOVA_RENKLERI, golgeRengi } from '../renk';
 import type { Mahalle, IzgaraHucre } from '../veriKaynagi';
+import { izgaraGeoJsonOlustur } from '../skorHesapla';
+import { dosyaIndir, dosyaAdiGuvenliHaleGetir } from '../dosyaIndir';
 
 interface HaritaProps {
   mahalleler: Mahalle[];
@@ -16,7 +18,13 @@ interface HaritaProps {
   seciliAd: string | null;
   onSecim: (ad: string) => void;
   butceSecilenAdlari: Set<string>;
-  izgaraKatmani: { ad: string; hucreler: IzgaraHucre[]; tehlikeler: number[]; simulasyonAktif: boolean } | null;
+  izgaraKatmani: {
+    ad: string;
+    hucreler: IzgaraHucre[];
+    hucreOzellikleri: { yesil_alan_orani: number; bina_yogunlugu: number; tehlike: number }[];
+    tehlikeler: number[];
+    simulasyonAktif: boolean;
+  } | null;
 }
 
 export default function Harita({
@@ -140,6 +148,22 @@ export default function Harita({
       </div>
 
       <div className="flex-1 min-h-0 rounded-md overflow-hidden relative">
+        {izgaraKatmani && (
+          <button
+            className="absolute top-2 right-2 z-[1000] text-xs px-2 py-1 rounded-md border border-contur bg-panel/90 hover:bg-panel shadow-sm"
+            onClick={() => {
+              const geoJson = izgaraGeoJsonOlustur(
+                izgaraKatmani.hucreler,
+                izgaraKatmani.hucreOzellikleri,
+                izgaraKatmani.simulasyonAktif,
+              );
+              const dosyaAdi = `${dosyaAdiGuvenliHaleGetir(izgaraKatmani.ad)}-izgara.json`;
+              dosyaIndir(JSON.stringify(geoJson, null, 2), dosyaAdi, 'application/json');
+            }}
+          >
+            Hücreleri GeoJSON indir
+          </button>
+        )}
         <MapContainer
           bounds={bounds}
           className="h-full w-full"

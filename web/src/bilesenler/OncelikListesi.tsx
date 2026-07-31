@@ -1,7 +1,10 @@
 import { riskRengi } from '../renk';
+import type { SiralamaModu, MahalleSkoru } from '../skorHesapla';
+import { oncelikCsvSatirlariOlustur, oncelikCsvMetniOlustur } from '../skorHesapla';
+import { dosyaIndir } from '../dosyaIndir';
 
 interface OncelikListesiProps {
-  siraliSkorlar: Array<{ ad: string; tehlike: number; maruziyet: number; risk: number }>;
+  siraliSkorlar: MahalleSkoru[];
   tipolojiByAd: Record<string, number>;
   tipolojiEslemesi: Record<string, { etiket: string; mudahale: string }>;
   tipolojiGuncelDegil: boolean;
@@ -13,6 +16,8 @@ interface OncelikListesiProps {
     enYuksekTehlikeAd: string | null;
     enYuksekRiskAd: string | null;
   };
+  siralamaModu: SiralamaModu;
+  onSiralamaModuChange: (mod: SiralamaModu) => void;
 }
 
 export default function OncelikListesi({
@@ -24,12 +29,62 @@ export default function OncelikListesi({
   seciliAd,
   onSecim,
   uyusmazlik,
+  siralamaModu,
+  onSiralamaModuChange,
 }: OncelikListesiProps) {
+  const baslik =
+    siralamaModu === 'risk'
+      ? 'Öncelik Sıralaması (Risk Skoruna Göre)'
+      : siralamaModu === 'yesil'
+        ? 'Öncelik Sıralaması (Yeşil Alan Eksikliğine Göre)'
+        : 'Öncelik Sıralaması (Bina Yoğunluğuna Göre)';
+
+  const csvIndir = () => {
+    const satirlar = oncelikCsvSatirlariOlustur(
+      siraliSkorlar,
+      tipolojiByAd,
+      tipolojiEslemesi,
+      tipolojiGuncelDegil,
+    );
+    const metin = oncelikCsvMetniOlustur(satirlar);
+    dosyaIndir('\uFEFF' + metin, 'oncelik-siralamasi.csv', 'text/csv;charset=utf-8;');
+  };
+
   return (
     <div className="bg-panel border border-contur rounded-xl p-4">
-      <h3 className="text-sm text-muted mb-3">
-        Öncelik Sıralaması (Risk Skoruna Göre)
-      </h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm text-muted">{baslik}</h3>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border border-contur overflow-hidden">
+            {(['risk', 'yesil', 'bina'] as const).map((mod) => (
+              <button
+                key={mod}
+                onClick={() => onSiralamaModuChange(mod)}
+                className={`text-xs px-2 py-1 transition-colors ${
+                  siralamaModu === mod
+                    ? 'bg-accent/10 border-accent/40'
+                    : 'hover:bg-panel'
+                }`}
+                title={
+                  mod === 'risk'
+                    ? 'Risk skoruna göre'
+                    : mod === 'yesil'
+                      ? 'Yeşil alan eksikliğine göre'
+                      : 'Bina yoğunluğuna göre'
+                }
+              >
+                {mod === 'risk' ? 'Risk' : mod === 'yesil' ? 'Yeşil Alan' : 'Bina Yoğunluğu'}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={csvIndir}
+            className="text-xs px-2 py-1 rounded-md border border-contur hover:bg-panel"
+          >
+            CSV indir
+          </button>
+        </div>
+      </div>
 
       {uyusmazlik.uyusmuyor && (
         <div className="bg-risk-orta/20 border border-risk-orta/50 text-ink text-xs rounded-lg px-3 py-2 mb-3">
@@ -82,6 +137,18 @@ export default function OncelikListesi({
                   title="AI servisi çalışmadığında bu değer önceden hesaplanmış yedek veriden gelir (REQ-F-23)."
                 >
                   AI · yedek veri
+                </span>
+              )}
+              {siralamaModu !== 'risk' && (
+                <span
+                  className="text-[10px] text-muted font-mono"
+                  title={
+                    siralamaModu === 'yesil' ? 'Yeşil alan eksikliği' : 'Bina yoğunluğu'
+                  }
+                >
+                  {siralamaModu === 'yesil'
+                    ? `%${Math.round((1 - row.yesilAlanOrani) * 100)}`
+                    : `%${Math.round(row.binaYogunlugu * 100)}`}
                 </span>
               )}
 
