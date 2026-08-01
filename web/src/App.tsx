@@ -241,7 +241,7 @@ export default function App() {
           tehlike: baseline[i],
         }));
     const tehlikeler = hucreOzellikleri.map((h) => h.tehlike);
-    return { ad: izgaraVeri.ad, hucreler: izgaraVeri.hucreler, hucreOzellikleri, tehlikeler, simulasyonAktif };
+    return { ad: izgaraVeri.ad, hucreler: izgaraVeri.hucreler, hucreOzellikleri, tehlikeler, baselineTehlikeler: baseline, simulasyonAktif };
   }, [izgaraGoster, izgaraVeri, seciliAd, agirliklar, simYesil]);
 
   const seciliHucreDetay = useMemo(() => {

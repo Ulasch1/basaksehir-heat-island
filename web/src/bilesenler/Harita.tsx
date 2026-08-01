@@ -30,6 +30,7 @@ interface HaritaProps {
     hucreler: IzgaraHucre[];
     hucreOzellikleri: { yesil_alan_orani: number; bina_yogunlugu: number; tehlike: number }[];
     tehlikeler: number[];
+    baselineTehlikeler: number[];
     simulasyonAktif: boolean;
   } | null;
 }
@@ -83,8 +84,8 @@ export default function Harita({
   }, [izgaraKatmani]);
 
   const izgaraMinMax = useMemo(() => {
-    if (!izgaraKatmani || izgaraKatmani.tehlikeler.length === 0) return null;
-    const tehlikeler = izgaraKatmani.tehlikeler;
+    if (!izgaraKatmani || izgaraKatmani.baselineTehlikeler.length === 0) return null;
+    const tehlikeler = izgaraKatmani.baselineTehlikeler;
     const min = Math.min(...tehlikeler);
     const max = Math.max(...tehlikeler);
     return { min, max };
@@ -123,6 +124,12 @@ export default function Harita({
     const izgaraAd = izgaraKatmani ? izgaraKatmani.ad : '';
     return `${seciliAd ?? '-'}__${budgetList}__${izgaraAd}`;
   }, [seciliAd, butceSecilenAdlari, izgaraKatmani]);
+
+  const izgaraGeoJsonKey = useMemo(() => {
+    if (!izgaraKatmani) return '';
+    const tehlikeToplami = izgaraKatmani.tehlikeler.reduce((acc, t) => acc + t, 0);
+    return `izgara-${izgaraKatmani.ad}-${izgaraKatmani.simulasyonAktif}-${tehlikeToplami.toFixed(6)}`;
+  }, [izgaraKatmani]);
 
   const styleFn = useMemo(
     () => (feature: Feature | undefined) => {
@@ -207,7 +214,7 @@ export default function Harita({
           />
           {izgaraFeatureCollection && izgaraMinMax && (
             <IzgaraGeoJSON
-              key={`izgara-${izgaraKatmani!.ad}`}
+              key={izgaraGeoJsonKey}
               data={izgaraFeatureCollection as unknown as GeoJSON.GeoJsonObject}
               style={izgaraStyleFn}
               onEachFeature={onEachIzgaraFeature}
