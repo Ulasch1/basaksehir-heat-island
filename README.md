@@ -105,7 +105,7 @@ date, this was a precondition for adding the AI layer at all.
 | Scoring module | **Implemented.** Pure TypeScript, no DOM, network or file access. 15 unit tests covering hazard, exposure scaling, risk, simulation and budget-constrained selection |
 | Data preparation script | Not started. Data sources verified, see below |
 | AI service | Not started |
-| Interface (map, priority list, simulation) | Not started |
+| Interface (map, priority list, simulation) | **Implemented.** Map, priority list, detail panel and simulation panel are built, plus an intra-neighborhood heat grid, CSV/GeoJSON export, and department-focused sort modes |
 | IoT sensor network | Phase 2, deliberately not implemented |
 
 ```bash
