@@ -86,9 +86,9 @@ export default function Harita({
 
   const izgaraMinMax = useMemo(() => {
     if (!izgaraKatmani || izgaraKatmani.baselineTehlikeler.length === 0) return null;
-    const tehlikeler = izgaraKatmani.baselineTehlikeler;
-    const min = Math.min(...tehlikeler);
-    const max = Math.max(...tehlikeler);
+    const baseline = izgaraKatmani.baselineTehlikeler;
+    const min = Math.min(...baseline);
+    const max = Math.max(...baseline);
     return { min, max };
   }, [izgaraKatmani]);
 
@@ -117,10 +117,16 @@ export default function Harita({
 
   const izgaraStyleFn = useMemo(
     () => (feature: Feature | undefined) => {
-      if (!feature || izgaraMinMax === null) return { fillOpacity: 0.85, weight: 0.5, color: 'oklch(0.85 0.01 260)' };
+      const isSelected = feature?.properties?.hucreIndex === seciliHucreIndex;
+      if (!feature || izgaraMinMax === null) {
+        return {
+          fillOpacity: 0.85,
+          weight: isSelected ? 2.5 : 0.5,
+          color: isSelected ? 'oklch(0.55 0.15 150)' : 'oklch(0.85 0.01 260)',
+        };
+      }
       const tehlike = feature.properties?.tehlike as number;
       const fillColor = golgeRengi(tehlike, izgaraMinMax.min, izgaraMinMax.max);
-      const isSelected = feature.properties?.hucreIndex === seciliHucreIndex;
       return {
         fillColor,
         fillOpacity: 0.85,
@@ -231,6 +237,14 @@ export default function Harita({
               style={izgaraStyleFn}
               onEachFeature={onEachIzgaraFeature}
               renderer={canvasRenderer}
+            />
+          )}
+          {izgaraKatmani && seciliMahalleFeature && (
+            <GeoJSON
+              key={`secili-cerceve-${izgaraKatmani.ad}`}
+              data={seciliMahalleFeature as unknown as GeoJSON.GeoJsonObject}
+              style={() => ({ fillOpacity: 0, weight: 2.5, color: 'oklch(0.55 0.15 150)' })}
+              interactive={false}
             />
           )}
         </MapContainer>

@@ -100,3 +100,41 @@ describe('izgara renk sabitleme (ARC-07 fix regresyonu)', () => {
     expect(degismeyenAmaRengiKayanSayisi).toBeGreaterThan(0);
   });
 });
+
+describe('izgara min genişletme (Düzeltme 2) – iyileşen hücreler arası kontrast alt-kenetlemesiz golgeRengi ile korunur', () => {
+  it('yüksek bütçe ile birçok hücre baseline minimumunun altına düşünce bile birbirinden farklı renkler üretir', () => {
+    const baseline = hesaplaHucreTehlikeleri(HUCRELER, AGIRLIKLAR);
+    const minBase = Math.min(...baseline);
+    const maxBase = Math.max(...baseline);
+
+    // Yüksek bütçeyle simüle et (simYesil=90). Çok sayıda hücre ciddi miktarda iyileşir,
+    // bazıları baseline minimumunun bile altına düşer.
+    const simulasyonlu = simuleHucreYesillestirme(HUCRELER, 90, KATSAYI, AGIRLIKLAR);
+    const tehlikeler90 = simulasyonlu.map((h) => h.tehlike);
+
+    // ESKİ (alt-kenetlemeli) golgeRengi taklidi: t alt ucunu 0'a clamp'ler.
+    function eskiGolgeRengi(tehlike: number, min: number, max: number) {
+      const aralik = max - min;
+      const t = aralik === 0 ? 0.5 : Math.min(Math.max((tehlike - min) / aralik, 0), 1);
+      const l = 0.85 - t * (0.85 - 0.60);
+      const c = 0.05 + t * (0.19 - 0.05);
+      const h = 225 + t * (25 - 225);
+      return `oklch(${l.toFixed(3)} ${c.toFixed(3)} ${h.toFixed(1)})`;
+    }
+
+    const renklerEski = tehlikeler90.map(t => eskiGolgeRengi(t, minBase, maxBase));
+    const benzersizEski = new Set(renklerEski).size;
+
+    // YENİ (alt-kenetlemesiz) golgeRengi: t < 0 olabilir, ancak l ve c sonradan clamp'lenir.
+    const renklerYeni = tehlikeler90.map(t => golgeRengi(t, minBase, maxBase));
+    const benzersizYeni = new Set(renklerYeni).size;
+
+    // Bütçeye giren (tehlikesi değişen) hücre sayısı
+    const degisenSayisi = tehlikeler90.filter((t, i) => t !== baseline[i]).length;
+
+    // Eski mantıkta bu değişen hücrelerin çoğu aynı renge sabitlenir.
+    // Yeni mantıkta renk çeşitliliği çok daha fazladır.
+    expect(benzersizYeni).toBeGreaterThan(benzersizEski);
+    expect(benzersizYeni).toBeGreaterThanOrEqual(degisenSayisi - 1); // ufak tolerans
+  });
+});
