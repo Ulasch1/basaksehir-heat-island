@@ -2,6 +2,7 @@ import { riskRengi } from '../renk';
 import type { SiralamaModu, MahalleSkoru } from '../skorHesapla';
 import { oncelikCsvSatirlariOlustur, oncelikCsvMetniOlustur } from '../skorHesapla';
 import { dosyaIndir } from '../dosyaIndir';
+import { motion } from 'framer-motion';
 
 interface OncelikListesiProps {
   siraliSkorlar: MahalleSkoru[];
@@ -105,9 +106,11 @@ export default function OncelikListesi({
           const isSelected = row.ad === seciliAd;
 
           return (
-            <button
+            <motion.button
               key={row.ad}
               onClick={() => onSecim(row.ad)}
+              layout
+              transition={{ type: 'spring', stiffness: 500, damping: 40 }}
               className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left border transition-colors ${
                 isSelected
                   ? 'bg-accent/10 border-accent/40'
@@ -155,7 +158,7 @@ export default function OncelikListesi({
               <span className="font-mono text-xs text-muted w-[4.5rem] text-right">
                 {row.risk.toFixed(3)}
               </span>
-            </button>
+            </motion.button>
           );
         })}
       </div>

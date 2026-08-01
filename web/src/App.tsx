@@ -50,6 +50,7 @@ export default function App() {
   const [izgaraVeri, setIzgaraVeri] = useState<{ ad: string; hucreler: IzgaraHucre[] } | null>(null);
   const [izgaraYukleniyor, setIzgaraYukleniyor] = useState(false);
   const [izgaraHata, setIzgaraHata] = useState<string | null>(null);
+  const [seciliHucreIndex, setSeciliHucreIndex] = useState<number | null>(null);
 
   useEffect(() => {
     let iptalEdildi = false;
@@ -109,6 +110,10 @@ export default function App() {
       iptalEdildi = true;
     };
   }, [izgaraGoster, seciliAd]);
+
+  useEffect(() => {
+    setSeciliHucreIndex(null);
+  }, [seciliAd, izgaraGoster]);
 
   // ---------- Türetilmiş değerler (useMemo) ----------
 
@@ -238,6 +243,13 @@ export default function App() {
     return { ad: izgaraVeri.ad, hucreler: izgaraVeri.hucreler, hucreOzellikleri, tehlikeler, simulasyonAktif };
   }, [izgaraGoster, izgaraVeri, seciliAd, agirliklar, simYesil]);
 
+  const seciliHucreDetay = useMemo(() => {
+    if (seciliHucreIndex === null || !izgaraKatmani) return null;
+    const ozellik = izgaraKatmani.hucreOzellikleri[seciliHucreIndex];
+    if (!ozellik) return null;
+    return ozellik;
+  }, [seciliHucreIndex, izgaraKatmani]);
+
   const yesilSimSonuc = useMemo(() => {
     if (!seciliMahalle || !seciliSkor) return null;
     return simuleYesilAlan(
@@ -322,6 +334,7 @@ export default function App() {
   }, [butceSonuc, mevcutSkorlar]);
 
   const onSecim = (ad: string) => setSeciliAd(ad);
+  const onHucreSecim = (index: number) => setSeciliHucreIndex(index);
 
   if (hata) {
     return (
@@ -366,6 +379,8 @@ export default function App() {
           renkEsikleri={ayarlar.renk_esikleri}
           seciliAd={seciliAd}
           onSecim={onSecim}
+          onHucreSecim={onHucreSecim}
+          seciliHucreIndex={seciliHucreIndex}
           butceSecilenAdlari={butceSecilenAdlari}
           izgaraKatmani={izgaraKatmani}
         />
@@ -387,46 +402,48 @@ export default function App() {
           />
 
           {seciliMahalle && seciliSkor && (
-            <DetayPaneli
-              mahalle={seciliMahalle}
-              skor={seciliSkor}
-              rank={seciliRank}
-              toplamMahalle={mahalleler.length}
-              renkEsikleri={ayarlar.renk_esikleri}
-              tipolojiEtiket={seciliTipolojiBilgi?.etiket ?? null}
-              mudahaleMetni={seciliTipolojiBilgi?.mudahale ?? null}
-              tipolojiGuncelDegil={tipolojiGuncelDegil}
-              projeksiyon={seciliProjeksiyon}
-              projeksiyonRiski={seciliProjeksiyonRiski}
-              projeksiyonGuncelDegil={projeksiyonGuncelDegil}
-              izgaraGoster={izgaraGoster}
-              onIzgaraGosterChange={setIzgaraGoster}
-              izgaraYukleniyor={izgaraYukleniyor}
-              izgaraHata={izgaraHata}
-            />
+            <div className="flex flex-col gap-4">
+              <DetayPaneli
+                mahalle={seciliMahalle}
+                skor={seciliSkor}
+                rank={seciliRank}
+                toplamMahalle={mahalleler.length}
+                renkEsikleri={ayarlar.renk_esikleri}
+                tipolojiEtiket={seciliTipolojiBilgi?.etiket ?? null}
+                mudahaleMetni={seciliTipolojiBilgi?.mudahale ?? null}
+                tipolojiGuncelDegil={tipolojiGuncelDegil}
+                projeksiyon={seciliProjeksiyon}
+                projeksiyonRiski={seciliProjeksiyonRiski}
+                projeksiyonGuncelDegil={projeksiyonGuncelDegil}
+                izgaraGoster={izgaraGoster}
+                onIzgaraGosterChange={setIzgaraGoster}
+                izgaraYukleniyor={izgaraYukleniyor}
+                izgaraHata={izgaraHata}
+                seciliHucreDetay={seciliHucreDetay}
+              />
+              <Simulasyon
+                ayarlar={{
+                  simulasyon_bina_azaltma_katsayisi:
+                    ayarlar.simulasyon_bina_azaltma_katsayisi,
+                }}
+                seciliAd={seciliAd}
+                seciliSkor={seciliSkor ? { risk: seciliSkor.risk } : null}
+                yesilSimSonuc={yesilSimSonuc}
+                simYesil={simYesil}
+                onSimYesilChange={setSimYesil}
+                nufusSimYeniRisk={nufusSimYeniRisk}
+                nufusSimYeniRank={nufusSimYeniRank}
+                yesilSimYeniRank={yesilSimYeniRank}
+                seciliBaseRank={seciliRank}
+                simNufusYuzde={simNufusYuzde}
+                onSimNufusYuzdeChange={setSimNufusYuzde}
+                simButce={simButce}
+                onSimButceChange={setSimButce}
+                butceKapsananRiskYuzdesi={butceSonuc.kapsananRiskYuzdesi}
+                butceSecilenler={butceSecilenListesi}
+              />
+            </div>
           )}
-
-          <Simulasyon
-            ayarlar={{
-              simulasyon_bina_azaltma_katsayisi:
-                ayarlar.simulasyon_bina_azaltma_katsayisi,
-            }}
-            seciliAd={seciliAd}
-            seciliSkor={seciliSkor ? { risk: seciliSkor.risk } : null}
-            yesilSimSonuc={yesilSimSonuc}
-            simYesil={simYesil}
-            onSimYesilChange={setSimYesil}
-            nufusSimYeniRisk={nufusSimYeniRisk}
-            nufusSimYeniRank={nufusSimYeniRank}
-            yesilSimYeniRank={yesilSimYeniRank}
-            seciliBaseRank={seciliRank}
-            simNufusYuzde={simNufusYuzde}
-            onSimNufusYuzdeChange={setSimNufusYuzde}
-            simButce={simButce}
-            onSimButceChange={setSimButce}
-            butceKapsananRiskYuzdesi={butceSonuc.kapsananRiskYuzdesi}
-            butceSecilenler={butceSecilenListesi}
-          />
         </div>
       </div>
     </div>

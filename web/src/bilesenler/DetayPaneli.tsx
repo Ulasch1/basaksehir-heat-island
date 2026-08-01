@@ -24,6 +24,7 @@ interface DetayPaneliProps {
   onIzgaraGosterChange: (deger: boolean) => void;
   izgaraYukleniyor: boolean;
   izgaraHata: string | null;
+  seciliHucreDetay: { yesil_alan_orani: number; bina_yogunlugu: number; tehlike: number } | null;
 }
 
 function buildChartData(
@@ -71,6 +72,7 @@ export default function DetayPaneli({
   onIzgaraGosterChange,
   izgaraYukleniyor,
   izgaraHata,
+  seciliHucreDetay,
 }: DetayPaneliProps) {
   const yesilEksikligi = (1 - mahalle.yesil_alan_orani) * 100;
   const binaYuzde = mahalle.bina_yogunlugu * 100;
@@ -274,6 +276,28 @@ export default function DetayPaneli({
           </div>
         )}
       </div>
+
+      {seciliHucreDetay && (
+        <div className="border-t border-contur pt-3">
+          <div className="text-[11px] text-muted uppercase tracking-wider mb-2">
+            Seçili Kare (100m × 100m)
+          </div>
+          <div className="text-xs space-y-1">
+            <div className="flex justify-between">
+              <span>Yeşil alan oranı</span>
+              <span>%{(seciliHucreDetay.yesil_alan_orani * 100).toFixed(0)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Bina yoğunluğu</span>
+              <span>%{(seciliHucreDetay.bina_yogunlugu * 100).toFixed(0)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Tehlike</span>
+              <span className="font-mono">{seciliHucreDetay.tehlike.toFixed(3)}</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

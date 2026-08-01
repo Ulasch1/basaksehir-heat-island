@@ -22,6 +22,8 @@ interface HaritaProps {
   renkEsikleri: { dusuk: number; yuksek: number };
   seciliAd: string | null;
   onSecim: (ad: string) => void;
+  onHucreSecim: (index: number) => void;
+  seciliHucreIndex: number | null;
   butceSecilenAdlari: Set<string>;
   izgaraKatmani: {
     ad: string;
@@ -38,6 +40,8 @@ export default function Harita({
   renkEsikleri,
   seciliAd,
   onSecim,
+  onHucreSecim,
+  seciliHucreIndex,
   butceSecilenAdlari,
   izgaraKatmani,
 }: HaritaProps) {
@@ -73,7 +77,7 @@ export default function Harita({
     const features: Feature[] = izgaraKatmani.hucreler.map((hucre, i) => ({
       type: 'Feature' as const,
       geometry: hucre.sinir as unknown as Geometry,
-      properties: { tehlike: izgaraKatmani.tehlikeler[i] },
+      properties: { tehlike: izgaraKatmani.tehlikeler[i], hucreIndex: i },
     }));
     return { type: 'FeatureCollection', features };
   }, [izgaraKatmani]);
@@ -88,25 +92,37 @@ export default function Harita({
 
   const canvasRenderer = useMemo(() => L.canvas(), []);
 
+  const onEachIzgaraFeature = useMemo(
+    () => (feature: Feature, layer: L.Layer) => {
+      layer.on('click', () => {
+        const hucreIndex = feature.properties?.hucreIndex as number | undefined;
+        if (hucreIndex !== undefined) onHucreSecim(hucreIndex);
+      });
+    },
+    [onHucreSecim],
+  );
+
   const izgaraStyleFn = useMemo(
     () => (feature: Feature | undefined) => {
       if (!feature || izgaraMinMax === null) return { fillOpacity: 0.85, weight: 0.5, color: 'oklch(0.85 0.01 260)' };
       const tehlike = feature.properties?.tehlike as number;
       const fillColor = golgeRengi(tehlike, izgaraMinMax.min, izgaraMinMax.max);
+      const isSelected = feature.properties?.hucreIndex === seciliHucreIndex;
       return {
         fillColor,
         fillOpacity: 0.85,
-        weight: 0.5,
-        color: 'oklch(0.85 0.01 260)',
+        weight: isSelected ? 2.5 : 0.5,
+        color: isSelected ? 'oklch(0.55 0.15 150)' : 'oklch(0.85 0.01 260)',
       };
     },
-    [izgaraMinMax],
+    [izgaraMinMax, seciliHucreIndex],
   );
 
   const geoJsonKey = useMemo(() => {
     const budgetList = [...butceSecilenAdlari].sort().join(',');
-    return `${seciliAd ?? '-'}__${budgetList}`;
-  }, [seciliAd, butceSecilenAdlari]);
+    const izgaraAd = izgaraKatmani ? izgaraKatmani.ad : '';
+    return `${seciliAd ?? '-'}__${budgetList}__${izgaraAd}`;
+  }, [seciliAd, butceSecilenAdlari, izgaraKatmani]);
 
   const styleFn = useMemo(
     () => (feature: Feature | undefined) => {
@@ -194,6 +210,7 @@ export default function Harita({
               key={`izgara-${izgaraKatmani!.ad}`}
               data={izgaraFeatureCollection as unknown as GeoJSON.GeoJsonObject}
               style={izgaraStyleFn}
+              onEachFeature={onEachIzgaraFeature}
               renderer={canvasRenderer}
             />
           )}
