@@ -26,6 +26,7 @@ import Harita from './bilesenler/Harita';
 import OncelikListesi from './bilesenler/OncelikListesi';
 import DetayPaneli from './bilesenler/DetayPaneli';
 import Simulasyon from './bilesenler/Simulasyon';
+import MahalleArama from './bilesenler/MahalleArama';
 
 interface TipolojiEslemeKaydi {
   etiket: string;
@@ -357,16 +358,14 @@ export default function App() {
 
   return (
     <div className="h-screen flex flex-col bg-page text-ink font-sans overflow-hidden">
-      <header className="px-7 py-4 bg-kurum flex items-baseline gap-4 flex-shrink-0">
+      <header className="px-7 py-4 bg-kurum flex items-center gap-4 flex-shrink-0">
         <h1 className="text-lg font-semibold tracking-tight text-page">
           Başakşehir Isı Adası Haritası
         </h1>
         <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-page text-kurum">
           Faz 1
         </span>
-        <span className="text-sm text-kurum-muted">
-          Başakşehir Belediyesi – Çevre ve Park Bahçeler Birimi – Karar Destek
-        </span>
+        <MahalleArama mahalleler={mahalleler} onSecim={onSecim} />
       </header>
 
       <div
