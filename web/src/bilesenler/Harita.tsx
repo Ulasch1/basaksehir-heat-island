@@ -1,8 +1,9 @@
-import { useMemo, type ComponentType } from 'react';
+import { useMemo, useEffect, useRef, type ComponentType } from 'react';
 import {
   MapContainer,
   TileLayer,
   GeoJSON,
+  useMap,
 } from 'react-leaflet';
 import type { GeoJSONProps } from 'react-leaflet';
 import type { FeatureCollection, Feature, Geometry } from 'geojson';
@@ -90,6 +91,17 @@ export default function Harita({
     const max = Math.max(...tehlikeler);
     return { min, max };
   }, [izgaraKatmani]);
+
+  const seciliMahalleFeature = useMemo<Feature | null>(() => {
+    if (!seciliAd) return null;
+    const m = mahalleler.find((mh) => mh.ad === seciliAd);
+    if (!m) return null;
+    return {
+      type: 'Feature' as const,
+      geometry: m.sinir as unknown as Geometry,
+      properties: { ad: m.ad },
+    };
+  }, [mahalleler, seciliAd]);
 
   const canvasRenderer = useMemo(() => L.canvas(), []);
 
@@ -199,13 +211,13 @@ export default function Harita({
           className="h-full w-full"
           zoomControl={true}
           scrollWheelZoom={true}
-          dragging={false}
           style={{ background: 'oklch(0.9 0.008 260)' }}
         >
           <TileLayer
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             attribution="&copy; OpenStreetMap katkıcıları (ODbL) — TÜİK ADNKS"
           />
+          <HaritaSecimTakipcisi seciliFeature={seciliMahalleFeature} />
           <GeoJSON
             key={geoJsonKey}
             data={anaFeatureCollection as unknown as GeoJSON.GeoJsonObject}
@@ -267,4 +279,26 @@ export default function Harita({
       )}
     </div>
   );
+}
+
+function HaritaSecimTakipcisi({ seciliFeature }: { seciliFeature: Feature | null }) {
+  const map = useMap();
+  const ilkCalismaRef = useRef(true);
+
+  useEffect(() => {
+    if (ilkCalismaRef.current) {
+      // Ilk otomatik secim (sayfa yuklenisinde varsayilan mahalle) icin
+      // animasyonlu ucus yapma; harita zaten tum ilceyi kapsayacak sekilde aciliyor.
+      ilkCalismaRef.current = false;
+      return;
+    }
+    if (!seciliFeature) return;
+    const katman = L.geoJSON(seciliFeature as unknown as GeoJSON.GeoJsonObject);
+    const sinirlar = katman.getBounds();
+    if (sinirlar.isValid()) {
+      map.flyToBounds(sinirlar, { padding: [40, 40] });
+    }
+  }, [seciliFeature, map]);
+
+  return null;
 }
