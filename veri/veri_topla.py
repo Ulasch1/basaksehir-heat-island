@@ -80,6 +80,30 @@ YESIL_POLIGON_ETIKETLERI = [
 # ayrica ele alinir ama siniflandirma fonksiyonunda tutarlilik icin burada da yer alir).
 YESIL_ETIKET_SETI = set(YESIL_POLIGON_ETIKETLERI) | {("natural", "tree")}
 
+# ---------------------------------------------------------------------------
+# Operasyonel baglam katmani sabitleri (site poligonlari, yol agi, disli alan siniri)
+# Bu katman SADECE gorsel/bilgilendirme icindir, skor formullerini ETKILEMEZ.
+# ---------------------------------------------------------------------------
+
+# REQ-F-01 disi: buyuksehir/ilce yol sorumlulugu YAKLASIK siniflandirmasi.
+# Bu KESIN/resmi bir hukuki kaynak DEGILDIR, sadece OSM yol siniflamasindan
+# turetilen bir tahmindir (5216 sayili Buyuksehir Belediyesi Kanunu'na gore
+# mahalleler arasi ana baglanti yollari buyuksehire, mahalle ici yerel yollar
+# ilceye YAKLASIK olarak karsilik gelir).
+BUYUKSEHIR_YOL_TIPLERI = {"trunk", "primary", "secondary"}
+ILCE_YOL_TIPLERI = {"tertiary", "unclassified", "residential"}
+
+YOL_AGI_YAKLASIKLIK_NOTU = (
+    "Bu katman OSM yol siniflamasindan turetilmis bir YAKLASIKLIKTIR, resmi "
+    "tescilli anaarter/sorumluluk listesine dayanmaz. Buyuksehir/ilce ayrimi "
+    "5216 sayili Buyuksehir Belediyesi Kanunu'na gore YAKLASIK olarak "
+    "trunk/primary/secondary -> buyuksehir, tertiary/unclassified/residential "
+    "-> ilce seklinde tahmin edilmistir."
+)
+
+# OSB (organize sanayi bolgesi) gibi disi birakilan mahalleler icin sabit not.
+DISLI_ALAN_NOTU = "OSB yonetimi yetkisinde, belediye degil"
+
 
 def yesil_etiket_mi(tags: dict) -> bool:
     """Verilen OSM tags sozlugunun REQ-F-02 yesil alan kumesine girip girmedigini dondurur."""
@@ -560,6 +584,77 @@ def olcekle_maruziyet(yogunluklar: List[float], alt_sinir: float) -> List[float]
     return [alt_sinir + (1 - alt_sinir) * ((x - min_val) / aralik) for x in yogunluklar]
 
 
+def siteler_gec(geojson_fc: dict) -> List[Dict[str, object]]:
+    """
+    Overpass'tan donen (landuse=residential, isimli way/relation) FeatureCollection'ini
+    isler. Her ozel konut sitesi/kompleksi icin {"ad": ..., "sinir": ...} sozlugu uretir.
+    Sinir, Overpass'in zaten WGS84 (EPSG:4326) dondurdugu GeoJSON geometridir,
+    HICBIR PROJEKSIYON/ALAN HESABI YAPILMAZ (bu katman gorsel amacli, skor uretmez).
+
+    Ayni sitenin farkli blok/etaplari (orn. "Arterium 1".."Arterium 6" veya ayni isimli
+    birden fazla parca) BILINCLI olarak BIRLESTIRILMEZ/gruplanmaz - her sonuc ayri bir
+    girdi olarak listede kalir (asiri muhendislik yapilmadi, ilk surum icin yeterli).
+
+    Adi olmayan (name etiketi bos/None) veya gecersiz/eksik geometrili sonuclar
+    sessizce (stderr'a UYARI ile) atlanir, bina_yesil_oranlari_hesapla'daki
+    per-feature try/except deseniyle tutarli.
+    """
+    siteler: List[Dict[str, object]] = []
+    for feature in geojson_fc.get("features", []):
+        try:
+            tags = feature.get("properties", {}).get("tags", {}) or {}
+            ad = tags.get("name")
+            geom = feature.get("geometry")
+            if not ad or geom is None or geom.get("coordinates") is None:
+                continue
+            siteler.append({"ad": ad, "sinir": geom})
+        except Exception as e:
+            print(f"    UYARI: bir site poligonu islenemedi, atlaniyor: {e}", file=sys.stderr)
+            continue
+    return siteler
+
+
+def yol_agi_siniflandir(geojson_fc: dict) -> List[Dict[str, object]]:
+    """
+    Overpass'tan donen highway FeatureCollection'ini BUYUKSEHIR_YOL_TIPLERI /
+    ILCE_YOL_TIPLERI kumelerine gore siniflandirir (bkz. YOL_AGI_YAKLASIKLIK_NOTU -
+    bu KESIN/resmi bir hukuki kaynak DEGILDIR, sadece OSM siniflamasindan yaklasik
+    turetilmistir).
+
+    Her yol segmenti icin {"sinir": ..., "sorumluluk": "buyuksehir"|"ilce",
+    "highway_tipi": <orijinal highway etiketi>} sozlugu uretir. Sinir Overpass'in
+    zaten WGS84 dondurdugu GeoJSON geometridir (genelde LineString), PROJEKSIYON
+    YAPILMAZ.
+
+    Sorgu zaten sadece bu iki kumedeki highway degerlerini cektigi icin normalde
+    tanimasiz bir deger gelmez; yine de savunma amacli, taninmayan/eksik highway
+    etiketli veya gecersiz geometrili segmentler sessizce (stderr UYARI ile) atlanir.
+    """
+    segmentler: List[Dict[str, object]] = []
+    for feature in geojson_fc.get("features", []):
+        try:
+            tags = feature.get("properties", {}).get("tags", {}) or {}
+            highway_tipi = tags.get("highway")
+            geom = feature.get("geometry")
+            if geom is None or geom.get("coordinates") is None:
+                continue
+            if highway_tipi in BUYUKSEHIR_YOL_TIPLERI:
+                sorumluluk = "buyuksehir"
+            elif highway_tipi in ILCE_YOL_TIPLERI:
+                sorumluluk = "ilce"
+            else:
+                continue
+            segmentler.append({
+                "sinir": geom,
+                "sorumluluk": sorumluluk,
+                "highway_tipi": highway_tipi,
+            })
+        except Exception as e:
+            print(f"    UYARI: bir yol segmenti islenemedi, atlaniyor: {e}", file=sys.stderr)
+            continue
+    return segmentler
+
+
 # ---------------------------------------------------------------------------
 # Ana iş akışı
 # ---------------------------------------------------------------------------
@@ -649,11 +744,13 @@ def main():
     print(f"  Ham sonuç: {len(mahalle_rel_listesi)} mahalle")
 
     # Disleme ve kontrol
+    dislanan_mahalleler_bilgi: List[Tuple[str, int]] = []  # baglam.json'da sinir gostermek icin
     mahalleler_gecerli = []
     for rel in mahalle_rel_listesi:
         ad = rel.get("tags", {}).get("name", "")
         if ad in DISLANAN_MAHALLE_ADLARI:
             print(f"  Kapsam dışı: {ad} (REQ-F-01)")
+            dislanan_mahalleler_bilgi.append((ad, rel["id"]))
             continue
         mahalleler_gecerli.append(rel)
 
@@ -926,6 +1023,86 @@ def main():
         print(f"izgara.json başarıyla yazıldı ({len(izgara_sonuclari)} mahalle).")
     except Exception as e:
         print(f"HATA: izgara.json yazılamadı: {e}", file=sys.stderr)
+        return 1
+
+    # 9. Operasyonel baglam katmani (site poligonlari, yol agi, disi birakilan alan
+    # sinirlari). BU KATMAN SKOR URETMEZ, sadece gorsel/bilgilendirme amaclidir.
+    # Her alt-kaynak BAGIMSIZ try/except ile korunur: biri basarisiz olursa
+    # (ai_onbellek REQ-F-23 mantigiyla ayni ruhta) o alt-alan bos/eksik birakilir,
+    # betik DURMAZ, cunku bu katmanin eksikligi skor uretimini etkilemez.
+    print("\nOperasyonel baglam katmani cekiliyor...")
+
+    baglam_siteler: List[Dict[str, object]] = []
+    try:
+        site_sorgu = (
+            f'[out:json][timeout:90];\n'
+            f'area({AREA_BASE + ilce_relation_id})->.a;\n'
+            '(\n'
+            '  way["landuse"="residential"]["name"](area.a);\n'
+            '  relation["landuse"="residential"]["name"](area.a);\n'
+            ');\n'
+            'out tags geom;'
+        )
+        site_veri = overpass_sorgula(site_sorgu, onbellek_yok=onbellek_yok)
+        site_fc = json2geojson(site_veri)
+        baglam_siteler = siteler_gec(site_fc)
+        print(f"  Baglam: {len(baglam_siteler)} site poligonu bulundu.")
+    except Exception as e:
+        print(f"UYARI: Site poligonlari cekilemedi, baglam.json'da bos birakilacak: {e}",
+              file=sys.stderr)
+
+    baglam_yol_agi: List[Dict[str, object]] = []
+    try:
+        yol_tipleri_regex = "|".join(sorted(BUYUKSEHIR_YOL_TIPLERI | ILCE_YOL_TIPLERI))
+        yol_sorgu = (
+            f'[out:json][timeout:120];\n'
+            f'area({AREA_BASE + ilce_relation_id})->.a;\n'
+            f'way["highway"~"^({yol_tipleri_regex})$"](area.a);\n'
+            'out tags geom;'
+        )
+        yol_veri = overpass_sorgula(yol_sorgu, onbellek_yok=onbellek_yok)
+        yol_fc = json2geojson(yol_veri)
+        baglam_yol_agi = yol_agi_siniflandir(yol_fc)
+        print(f"  Baglam: {len(baglam_yol_agi)} yol segmenti siniflandirildi.")
+    except Exception as e:
+        print(f"UYARI: Yol agi cekilemedi, baglam.json'da bos birakilacak: {e}",
+              file=sys.stderr)
+
+    baglam_disli_alanlar: List[Dict[str, object]] = []
+    for dislanan_ad, dislanan_id in dislanan_mahalleler_bilgi:
+        try:
+            disli_sorgu = f'[out:json][timeout:180];\nrelation({dislanan_id});\nout geom;'
+            disli_veri = overpass_sorgula(disli_sorgu, onbellek_yok=onbellek_yok)
+            disli_geom = osm_to_geometri(disli_veri)
+            baglam_disli_alanlar.append({
+                "ad": dislanan_ad,
+                "sinir": disli_geom.__geo_interface__,
+                "not": DISLI_ALAN_NOTU,
+            })
+            print(f"  Baglam: '{dislanan_ad}' siniri kaydedildi (kapsam disi, sadece bilgi amacli).")
+        except Exception as e:
+            print(f"UYARI: '{dislanan_ad}' siniri cekilemedi, baglam.json'da atlanacak: {e}",
+                  file=sys.stderr)
+
+    baglam = {
+        "siteler": baglam_siteler,
+        "yol_agi": baglam_yol_agi,
+        "yol_agi_aciklama": YOL_AGI_YAKLASIKLIK_NOTU,
+        "disli_alanlar": baglam_disli_alanlar,
+    }
+
+    cikti_yolu_baglam = os.path.join("veri", "baglam.json")
+    gecici_yol_baglam = cikti_yolu_baglam + ".tmp"
+    try:
+        with open(gecici_yol_baglam, "w", encoding="utf-8") as f:
+            json.dump(baglam, f, ensure_ascii=False, indent=2)
+        os.replace(gecici_yol_baglam, cikti_yolu_baglam)
+        print(
+            f"baglam.json başarıyla yazıldı ({len(baglam_siteler)} site, "
+            f"{len(baglam_yol_agi)} yol segmenti, {len(baglam_disli_alanlar)} disli alan)."
+        )
+    except Exception as e:
+        print(f"HATA: baglam.json yazılamadı: {e}", file=sys.stderr)
         return 1
 
     return 0

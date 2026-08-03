@@ -6,8 +6,10 @@ import {
   simuleYesilAlan,
   simuleNufus,
   secBudceKisitli,
+  hesaplaGerekliYesilAlanOrani,
+  maruziyetYeniMahalleyleHesapla,
 } from '../skor';
-import type { MahalleGirdi, Skorlar } from '../skor';
+import type { MahalleGirdi, Skorlar, GerekliYesilAlanSonucu } from '../skor';
 
 // ----- TC'lerde kullanilacak sabit 10 mahallelik ornek veri -----
 // Samlar mahallesi nufus yonunden aykiri dusuk degerlidir.
@@ -270,5 +272,48 @@ describe('ARC-04 Skor Modulu Testleri', () => {
     expect(yeniMaruziyet[0]).toBeCloseTo(0.1); // Samlar hala minimumda
     expect(yeniMaruziyet[9]).toBeCloseTo(1); // Ornek Mahalle 9 hala maksimumda (max degismedi)
     expect(yeniMaruziyet[1]).toBeCloseTo(0.1 + 0.9 * ((200 - 19.5) / 980.5)); // ~0.2657
+  });
+});
+
+describe('Yeni hesaplaGerekliYesilAlanOrani ve maruziyetYeniMahalleyleHesapla testleri', () => {
+  it('Normal durum: hedefTehlike 0.3, bina yogunlugu 0.4 -> y=0.8', () => {
+    const sonuc = hesaplaGerekliYesilAlanOrani(0.3, 0.4);
+    expect(sonuc.mumkun).toBe(true);
+    expect(sonuc.gerekliYesilAlanOrani).toBeCloseTo(0.8, 5);
+  });
+
+  it('Ulasilamaz hedef (y > 1): bina yogunlugu 0.95, hedef 0.05 -> mumkun false', () => {
+    const sonuc = hesaplaGerekliYesilAlanOrani(0.05, 0.95);
+    expect(sonuc.mumkun).toBe(false);
+    expect(sonuc.gerekliYesilAlanOrani).toBeNull();
+  });
+
+  it('Zaten altinda: hedefTehlike 0.9, bina yogunlugu 0.1 -> y clamp 0', () => {
+    // y = 1 - (0.9*1 - 0.5*0.1) / 0.5 = 1 - (0.9 - 0.05) / 0.5 = 1 - 1.7 = -0.7
+    const sonuc = hesaplaGerekliYesilAlanOrani(0.9, 0.1);
+    expect(sonuc.mumkun).toBe(true);
+    expect(sonuc.gerekliYesilAlanOrani).toBe(0);
+  });
+
+  it('Sifir yesil alan agirligi hata firlatir', () => {
+    expect(() =>
+      hesaplaGerekliYesilAlanOrani(0.3, 0.4, { yesilAlan: 0, binaYogunlugu: 1 })
+    ).toThrow();
+  });
+
+  it('maruziyetYeniMahalleyleHesapla: eklenen deger max olunca 1 doner', () => {
+    const sonuc = maruziyetYeniMahalleyleHesapla([100, 200, 300], 400, 0.1);
+    expect(sonuc).toBeCloseTo(1, 5);
+  });
+
+  it('maruziyetYeniMahalleyleHesapla: eklenen deger aralikta -> 0.55', () => {
+    // min=100, max=500, append 300 -> (300-100)/(500-100)=200/400=0.5, maruziyet=0.1+0.9*0.5=0.55
+    const sonuc = maruziyetYeniMahalleyleHesapla([100, 500], 300, 0.1);
+    expect(sonuc).toBeCloseTo(0.55, 5);
+  });
+
+  it('maruziyetYeniMahalleyleHesapla: bos diziye ekleme -> 1 doner', () => {
+    const sonuc = maruziyetYeniMahalleyleHesapla([], 250);
+    expect(sonuc).toBe(1);
   });
 });

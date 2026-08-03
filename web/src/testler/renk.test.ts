@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import ayarlar from '../ayarlar.json';
-import { riskKovasiBelirle, riskRengi, KOVA_RENKLERI, golgeRengi } from '../renk';
+import { riskKovasiBelirle, riskRengi, KOVA_RENKLERI, golgeRengi, BAGLAM_RENKLERI, yolSorumlulukRengi } from '../renk';
 import type { RenkEsikleri } from '../renk';
 
 const esikler: RenkEsikleri = ayarlar.renk_esikleri;
@@ -109,5 +109,19 @@ describe('golgeRengi', () => {
   it('KOVA_RENKLERI ve riskRengi testleri degismemistir (bu test dosyasindaki mevcut testler hala gecer)', () => {
     // Bu sadece bir varlik kontrolu; mevcut testler calismaya devam edecek.
     expect(true).toBe(true);
+  });
+});
+
+describe('yolSorumlulukRengi', () => {
+  it('buyuksehir icin BAGLAM_RENKLERI.yolBuyuksehir dondurur', () => {
+    expect(yolSorumlulukRengi('buyuksehir')).toBe(BAGLAM_RENKLERI.yolBuyuksehir);
+  });
+
+  it('ilce icin BAGLAM_RENKLERI.yolIlce dondurur', () => {
+    expect(yolSorumlulukRengi('ilce')).toBe(BAGLAM_RENKLERI.yolIlce);
+  });
+
+  it('iki sorumluluk turu farkli renk dondurur', () => {
+    expect(yolSorumlulukRengi('buyuksehir')).not.toBe(yolSorumlulukRengi('ilce'));
   });
 });

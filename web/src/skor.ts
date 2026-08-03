@@ -194,3 +194,60 @@ export function secBudceKisitli(
 
   return { secilenler, kapsananRiskYuzdesi };
 }
+
+/**
+ * hesaplaTehlike fonksiyonunun cebirsel tersi.
+ * Verilen bir hedef tehlike skoru ve sabit bina yogunlugu icin,
+ * o tehlikeyi saglayacak yesil alan oranini (y) cozer.
+ *
+ * Ileri formül: hedefTehlike = (wYesil*(1-y) + wBina*binaYogunlugu) / (wYesil+wBina)
+ * Cozulen: y = 1 - (hedefTehlike*(wYesil+wBina) - wBina*binaYogunlugu) / wYesil
+ *
+ * @param hedefTehlike - ulasilmak istenen tehlike skoru
+ * @param binaYogunlugu - projenin sabit bina yogunlugu
+ * @param agirliklar - tehlike agirliklari (varsayilan { yesilAlan: 0.5, binaYogunlugu: 0.5 })
+ * @returns GerekliYesilAlanSonucu: mumkun ve gerekliYesilAlanOrani (mumkun degilse null)
+ * @throws wYesil === 0 hatasi
+ */
+export interface GerekliYesilAlanSonucu {
+  mumkun: boolean;
+  gerekliYesilAlanOrani: number | null;
+}
+
+export function hesaplaGerekliYesilAlanOrani(
+  hedefTehlike: number,
+  binaYogunlugu: number,
+  agirliklar: TehlikeAgirliklari = { yesilAlan: 0.5, binaYogunlugu: 0.5 }
+): GerekliYesilAlanSonucu {
+  const { yesilAlan: wYesil, binaYogunlugu: wBina } = agirliklar;
+  if (wYesil === 0) {
+    throw new Error('hesaplaGerekliYesilAlanOrani: yesil alan agirligi sifirken bu hesap yapilamaz');
+  }
+
+  const y = 1 - (hedefTehlike * (wYesil + wBina) - wBina * binaYogunlugu) / wYesil;
+
+  if (y > 1) {
+    return { mumkun: false, gerekliYesilAlanOrani: null };
+  }
+  return { mumkun: true, gerekliYesilAlanOrani: Math.max(0, y) };
+}
+
+/**
+ * Mevcut nufus yogunluk listesine yeni bir mahalle yogunlugu ekler,
+ * tum diziyi olcekleMaruziyet ile yeniden olcekler ve YALNIZCA
+ * eklenen yeni elemanin (son eleman) maruziyet degerini dondurur.
+ *
+ * @param mevcutYogunluklar - mevcut mahallelerin yogunluklari (bos olabilir)
+ * @param yeniYogunluk - eklenecek yeni mahallenin yogunlugu
+ * @param altSinir - olceklemede kullanilacak alt sinir (varsayilan 0.1)
+ * @returns yeni elemanin olceklenmis maruziyeti
+ */
+export function maruziyetYeniMahalleyleHesapla(
+  mevcutYogunluklar: number[],
+  yeniYogunluk: number,
+  altSinir: number = 0.1
+): number {
+  const genisletilmis = [...mevcutYogunluklar, yeniYogunluk];
+  const olceklenmis = olcekleMaruziyet(genisletilmis, altSinir);
+  return olceklenmis[olceklenmis.length - 1];
+}

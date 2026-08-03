@@ -17,10 +17,20 @@ import {
   tipolojiEtiketEslemesiTure,
   type TermalStresEsikleri,
   type BaskinBilesen,
+  type ImarOnDegerlendirmeSonucu,
+  noktaHalkaIcindeMi,
+  noktaTekPoligondaMi,
+  noktaSinirIcindeMi,
+  hucreMerkeziHesapla,
+  hucreIcindekiSiteyiBul,
+  siteMahalleyleKesisiyorMu,
+  hesaplaZarfOrani,
+  hesaplaImarOnDegerlendirme,
 } from '../skorHesapla';
 import type { MahalleVeri, MahalleSkoru, SkorAyarlari } from '../skorHesapla';
 import type { TehlikeAgirliklari } from '../skor';
 import { hesaplaTehlike, hesaplaRisk } from '../skor';
+import type { MahalleSinir, BaglamSite } from '../veriKaynagi';
 
 // Sabit ayar objesi (ayarlar.json ile ayni yapi)
 const VARSAYILAN_AYARLAR: SkorAyarlari = {
@@ -712,5 +722,207 @@ describe('tipolojiEtiketEslemesiTure', () => {
 
     expect(Object.keys(esleme).sort()).toEqual(['0', '1', '2']);
     expect(esleme['3']).toBeUndefined();
+  });
+});
+
+describe('hucre-site eslesme (geometri)', () => {
+  // Sabit test geometrileri (MahalleSinir yapisinda elle olusturulmus GeoJSON)
+  const kareSiteSinir: MahalleSinir = {
+    type: 'Polygon',
+    coordinates: [[[0,0],[0,10],[10,10],[10,0],[0,0]]]
+  };
+
+  const kareSite: BaglamSite = { ad: 'Kare Site', sinir: kareSiteSinir };
+
+  const delikliSiteSinir: MahalleSinir = {
+    type: 'Polygon',
+    coordinates: [
+      [[0,0],[0,10],[10,10],[10,0],[0,0]],   // dis
+      [[4,4],[4,6],[6,6],[6,4],[4,4]]        // delik
+    ]
+  };
+
+  const delikliSite: BaglamSite = { ad: 'Delikli Site', sinir: delikliSiteSinir };
+
+  const cokluSiteSinir: MahalleSinir = {
+    type: 'MultiPolygon',
+    coordinates: [
+      [[[0,0],[0,5],[5,5],[5,0],[0,0]]],          // ilk parca
+      [[[8,8],[8,12],[12,12],[12,8],[8,8]]]         // ikinci parca
+    ]
+  };
+
+  const cokluSite: BaglamSite = { ad: 'Coklu Site', sinir: cokluSiteSinir };
+
+  it('basit kare site icinde hucre merkezi -> site eslesir', () => {
+    const hucre = { sinir: { type: 'Polygon' as const, coordinates: [[[5,5],[5,6],[6,6],[6,5],[5,5]]] } };
+    const sonuc = hucreIcindekiSiteyiBul(hucre, [kareSite]);
+    expect(sonuc).not.toBeNull();
+    expect(sonuc!.ad).toBe('Kare Site');
+  });
+
+  it('kare site disinda hucre -> null', () => {
+    const hucre = { sinir: { type: 'Polygon' as const, coordinates: [[[20,20],[20,21],[21,21],[21,20],[20,20]]] } };
+    const sonuc = hucreIcindekiSiteyiBul(hucre, [kareSite]);
+    expect(sonuc).toBeNull();
+  });
+
+  it('delikli poligonda hucre merkezi delik icinde -> site eslesmez', () => {
+    const hucre = { sinir: { type: 'Polygon' as const, coordinates: [[[5,5],[5,6],[6,6],[6,5],[5,5]]] } };
+    const sonuc = hucreIcindekiSiteyiBul(hucre, [delikliSite]);
+    expect(sonuc).toBeNull();
+  });
+
+  it('delikli poligonda hucre merkezi delik disinda ama dis kare icinde -> site eslesir', () => {
+    const hucre = { sinir: { type: 'Polygon' as const, coordinates: [[[2,2],[2,3],[3,3],[3,2],[2,2]]] } };
+    const sonuc = hucreIcindekiSiteyiBul(hucre, [delikliSite]);
+    expect(sonuc).not.toBeNull();
+    expect(sonuc!.ad).toBe('Delikli Site');
+  });
+
+  it('multipolygon sitede hucre ikinci parca icinde -> site eslesir', () => {
+    const hucre = { sinir: { type: 'Polygon' as const, coordinates: [[[9,9],[9,10],[10,10],[10,9],[9,9]]] } };
+    const sonuc = hucreIcindekiSiteyiBul(hucre, [cokluSite]);
+    expect(sonuc).not.toBeNull();
+    expect(sonuc!.ad).toBe('Coklu Site');
+  });
+
+  it('birden fazla site, hicbirinin icinde olmayan hucre -> null', () => {
+    const siteA: BaglamSite = { ad: 'A', sinir: { type: 'Polygon' as const, coordinates: [[[0,0],[0,2],[2,2],[2,0],[0,0]]] } };
+    const siteB: BaglamSite = { ad: 'B', sinir: { type: 'Polygon' as const, coordinates: [[[3,3],[3,4],[4,4],[4,3],[3,3]]] } };
+    const hucre = { sinir: { type: 'Polygon' as const, coordinates: [[[10,10],[10,11],[11,11],[11,10],[10,10]]] } };
+    const sonuc = hucreIcindekiSiteyiBul(hucre, [siteA, siteB]);
+    expect(sonuc).toBeNull();
+  });
+
+  it('noktaHalkaIcindeMi ray-casting dogru calisir', () => {
+    const halka = [[0,0],[4,0],[4,4],[0,4],[0,0]];
+    expect(noktaHalkaIcindeMi([2,2], halka)).toBe(true);
+    expect(noktaHalkaIcindeMi([5,5], halka)).toBe(false);
+  });
+
+  it('noktaTekPoligondaMi delik kontrolu yapar', () => {
+    const dis = [[0,0],[0,10],[10,10],[10,0],[0,0]];
+    const delik = [[4,4],[4,6],[6,6],[6,4],[4,4]];
+    const coordinates = [dis, delik];
+    expect(noktaTekPoligondaMi([5,5], coordinates)).toBe(false); // delik icinde
+    expect(noktaTekPoligondaMi([2,2], coordinates)).toBe(true);
+  });
+
+  it('hucreMerkeziHesapla dogru ortalama hesaplar', () => {
+    const kutu = { type: 'Polygon' as const, coordinates: [[[0,0],[2,0],[2,2],[0,2],[0,0]]] };
+    const [cx, cy] = hucreMerkeziHesapla(kutu)!;
+    expect(cx).toBeCloseTo(1, 5);
+    expect(cy).toBeCloseTo(1, 5);
+
+    const coklu = { type: 'MultiPolygon' as const, coordinates: [
+      [[[0,0],[4,0],[4,4],[0,4],[0,0]]],
+      [[[6,6],[10,6],[10,10],[6,10],[6,6]]]
+    ]};
+    const [mX, mY] = hucreMerkeziHesapla(coklu)!;
+    const beklenenX = (2 * 4 + 8 * 4) / 8; // 4 point each, avg x: ( (0+4+4+0)=8/4=2, (6+10+10+6)=32/4=8 ), total 8 points, avg = (2*4 + 8*4)/8 = (8+32)/8=5
+    expect(mX).toBeCloseTo(beklenenX, 5);
+    expect(mY).toBeCloseTo(5, 5);
+  });
+
+  it('siteMahalleyleKesisiyorMu bounding box kesisimi dogru calisir', () => {
+    // Iki kesisen kutu
+    const siteSinir: MahalleSinir = { type: 'Polygon' as const, coordinates: [[[0,0],[0,3],[3,3],[3,0],[0,0]]] };
+    const mahalleSinir: MahalleSinir = { type: 'Polygon' as const, coordinates: [[[2,2],[2,5],[5,5],[5,2],[2,2]]] };
+    expect(siteMahalleyleKesisiyorMu({ ad: 't', sinir: siteSinir }, mahalleSinir)).toBe(true);
+
+    // Tamamen ayrik
+    const ayrikSinir: MahalleSinir = { type: 'Polygon' as const, coordinates: [[[10,10],[10,12],[12,12],[12,10],[10,10]]] };
+    expect(siteMahalleyleKesisiyorMu({ ad: 't', sinir: siteSinir }, ayrikSinir)).toBe(false);
+  });
+});
+
+describe('hesaplaZarfOrani', () => {
+  it('zarf_alan_km2 / alan_km2 oranini dogru hesaplar', () => {
+    expect(hesaplaZarfOrani(10, 5)).toBeCloseTo(0.5, 10);
+    expect(hesaplaZarfOrani(9.35, 8.9776)).toBeCloseTo(0.9602, 4); // yuksek zarf orani ornegi (gercek mahalle degil, sadece sayisal ornek)
+    expect(hesaplaZarfOrani(20, 2.4)).toBeCloseTo(0.12, 10); // dusuk zarf orani ornegi
+  });
+
+  it('zarf alani mahalle alanina esitse 1 doner', () => {
+    expect(hesaplaZarfOrani(5, 5)).toBeCloseTo(1, 10);
+  });
+
+  it('alanKm2 sifir veya negatifse hata firlatir', () => {
+    expect(() => hesaplaZarfOrani(0, 1)).toThrow();
+    expect(() => hesaplaZarfOrani(-2, 1)).toThrow();
+  });
+});
+
+describe('hesaplaImarOnDegerlendirme testleri', () => {
+  it('Normal durum: proje maruziyeti 1, hedef tehlike 0.3, gerekli yesil alan orani 0.9', () => {
+    const sonuc = hesaplaImarOnDegerlendirme(
+      PROJEKSIYON_MAHALLELER, // [100/1=100, 200/1=200]
+      0.5,   // projeAlanKm2
+      150,   // projeNufus -> yogunluk 300
+      0.5,   // projeBinaYogunlugu
+      0.3,   // hedefRisk
+      VARSAYILAN_AYARLAR
+    );
+    expect(sonuc.projeMaruziyeti).toBeCloseTo(1, 5);
+    expect(sonuc.hedefTehlike).toBeCloseTo(0.3, 5);
+    expect(sonuc.mumkun).toBe(true);
+    expect(sonuc.gerekliYesilAlanOrani).toBeCloseTo(0.9, 5);
+  });
+
+  it('Ulasilamaz hedef: yuksek bina yogunlugu ve dusuk hedef risk -> mumkun false', () => {
+    const sonuc = hesaplaImarOnDegerlendirme(
+      PROJEKSIYON_MAHALLELER,
+      0.5,
+      150,
+      0.5,
+      0.05, // hedefRisk cok dusuk
+      VARSAYILAN_AYARLAR
+    );
+    expect(sonuc.mumkun).toBe(false);
+    expect(sonuc.gerekliYesilAlanOrani).toBeNull();
+  });
+
+  it('Zaten altinda: dusuk bina yogunlugu, yeterli hedef risk -> y <= 0 -> gerekli 0', () => {
+    const sonuc = hesaplaImarOnDegerlendirme(
+      PROJEKSIYON_MAHALLELER,
+      0.5,
+      150,
+      0.05,  // dusuk bina yogunlugu
+      0.6,   // hedefRisk yuksek -> hedefTehlike 0.6, y negatif
+      VARSAYILAN_AYARLAR
+    );
+    expect(sonuc.mumkun).toBe(true);
+    expect(sonuc.gerekliYesilAlanOrani).toBe(0);
+  });
+
+  it('projeAlanKm2 sifir veya negatif ise hata firlatir', () => {
+    expect(() =>
+      hesaplaImarOnDegerlendirme(
+        PROJEKSIYON_MAHALLELER,
+        0,   // sifir alan
+        1000,
+        0.5,
+        0.12,
+        VARSAYILAN_AYARLAR
+      )
+    ).toThrow();
+  });
+
+  it('sifir yesil alan agirligi, hesaplaGerekliYesilAlanOrani uzerinden hata firlatir', () => {
+    const ayarlarSifirYesil = {
+      ...VARSAYILAN_AYARLAR,
+      tehlike_agirliklari: { yesil_alan: 0, bina_yogunlugu: 1 },
+    };
+    expect(() =>
+      hesaplaImarOnDegerlendirme(
+        PROJEKSIYON_MAHALLELER,
+        0.5,
+        150,
+        0.5,
+        0.3,
+        ayarlarSifirYesil
+      )
+    ).toThrow();
   });
 });

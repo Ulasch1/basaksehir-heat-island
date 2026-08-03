@@ -111,6 +111,60 @@ export async function izgaraGetir(mahalleAd: string): Promise<IzgaraHucre[]> {
   return mahalleVeri.hucreler;
 }
 
+// ========== Baglam (operasyonel baglam katmani) ==========
+// Bu katman izgaraGetir/izgaraDosyasiniGetir ile AYNI cache+fetch desenini izler.
+// SADECE gorsel/bilgilendirme amaclidir, skor hesaplarini etkilemez.
+
+export interface BaglamSite {
+  ad: string;
+  sinir: MahalleSinir;
+}
+
+export interface BaglamYolSinir {
+  type: 'LineString' | 'MultiLineString';
+  coordinates: unknown;
+}
+
+export interface BaglamYolSegmenti {
+  sinir: BaglamYolSinir;
+  sorumluluk: 'buyuksehir' | 'ilce';
+  highway_tipi: string;
+}
+
+export interface BaglamDisliAlan {
+  ad: string;
+  sinir: MahalleSinir;
+  not: string;
+}
+
+export interface BaglamVerisi {
+  siteler: BaglamSite[];
+  yol_agi: BaglamYolSegmenti[];
+  yol_agi_aciklama: string;
+  disli_alanlar: BaglamDisliAlan[];
+}
+
+let baglamCache: Promise<BaglamVerisi> | null = null;
+
+export async function baglamGetir(): Promise<BaglamVerisi> {
+  if (baglamCache) {
+    return baglamCache;
+  }
+  baglamCache = (async () => {
+    try {
+      const cevap = await fetch('/baglam.json');
+      if (!cevap.ok) {
+        throw new Error(`Baglam dosyasi yuklenemedi: ${cevap.status} ${cevap.statusText}`);
+      }
+      return (await cevap.json()) as BaglamVerisi;
+    } catch (e) {
+      baglamCache = null;
+      throw e;
+    }
+  })();
+  return baglamCache;
+}
+
 // ========== Statik Kaynak ==========
 
 export class StatikKaynak implements VeriKaynagi {

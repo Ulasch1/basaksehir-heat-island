@@ -53,9 +53,14 @@ export default function OncelikListesi({
 
   return (
     <div className="bg-panel border border-contur rounded-xl p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm text-muted">{baslik}</h3>
-        <div className="flex items-center gap-2">
+      <div className="mb-3">
+        {/* Başlık, moda göre uzunluğu değişen değişken bir metin (ör. "Yeşil Alan
+            Eksikliğine Göre" "Risk Skoruna Göre"den çok daha uzun). Kontrol
+            düğmeleriyle aynı satırda sıkışırsa dar panelde farklı sayıda satıra
+            sarar ve mod değişince liste yukarı/aşağı kayar. min-h, en uzun
+            başlığın kaç satır tutacağı kadar yer ayırıp bunu engeller. */}
+        <h3 className="text-sm text-muted min-h-[2.25rem] leading-[1.125rem]">{baslik}</h3>
+        <div className="flex items-center gap-2 mt-1.5">
           <div className="flex rounded-lg border border-contur overflow-hidden">
             {(['risk', 'yesil', 'bina'] as const).map((mod) => (
               <button
@@ -142,20 +147,28 @@ export default function OncelikListesi({
                   AI · yedek veri
                 </span>
               )}
-              {siralamaModu !== 'risk' && (
-                <span
-                  className="text-[10px] text-muted font-mono"
-                  title={
-                    siralamaModu === 'yesil' ? 'Yeşil alan eksikliği' : 'Bina yoğunluğu'
-                  }
-                >
-                  {siralamaModu === 'yesil'
-                    ? `%${Math.round((1 - row.yesilAlanOrani) * 100)}`
-                    : `%${Math.round(row.binaYogunlugu * 100)}`}
-                </span>
-              )}
 
-              <span className="font-mono text-xs text-muted w-[4.5rem] text-right">
+              {/* Bu sütun her zaman render edilir (risk modunda boş metinle): sıralama
+                  modu değişince ortaya çıkıp kaybolmasın, aksi halde adı ve risk
+                  sütununu iten bir kayma oluşur. */}
+              <span
+                className="w-8 text-[10px] text-muted font-mono text-right"
+                title={
+                  siralamaModu === 'yesil'
+                    ? 'Yeşil alan eksikliği'
+                    : siralamaModu === 'bina'
+                      ? 'Bina yoğunluğu'
+                      : undefined
+                }
+              >
+                {siralamaModu === 'yesil'
+                  ? `%${Math.round((1 - row.yesilAlanOrani) * 100)}`
+                  : siralamaModu === 'bina'
+                    ? `%${Math.round(row.binaYogunlugu * 100)}`
+                    : ''}
+              </span>
+
+              <span className="w-[4.5rem] font-mono text-xs text-muted text-right">
                 {row.risk.toFixed(3)}
               </span>
             </motion.button>

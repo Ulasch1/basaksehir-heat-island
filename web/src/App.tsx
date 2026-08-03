@@ -17,6 +17,8 @@ import {
   hucreTehlikeYuzdelikDilimiHesapla,
   hucreBazliMahalleSkoruHesapla,
   tipolojiEtiketEslemesiTure,
+  hucreIcindekiSiteyiBul,
+  siteMahalleyleKesisiyorMu,
   type MahalleVeri,
   type MahalleSkoru,
   type ProjeksiyonRiski,
@@ -27,12 +29,14 @@ import {
 import { simuleYesilAlan, simuleNufus, secBudceKisitli } from './skor';
 import type { MahalleGirdi, TehlikeAgirliklari } from './skor';
 import { izgaraGetir, type IzgaraHucre } from './veriKaynagi';
+import { baglamGetir, type BaglamVerisi } from './veriKaynagi';
 import { hesaplaHucreTehlikeleri } from './skorHesapla';
 import Harita from './bilesenler/Harita';
 import OncelikListesi from './bilesenler/OncelikListesi';
 import DetayPaneli from './bilesenler/DetayPaneli';
 import Simulasyon from './bilesenler/Simulasyon';
 import MahalleArama from './bilesenler/MahalleArama';
+import ImarHesaplayici from './bilesenler/ImarHesaplayici';
 
 export default function App() {
   const veriKaynagi = useMemo(() => varsayilanVeriKaynagi(), []);
@@ -53,6 +57,7 @@ export default function App() {
   const [izgaraYukleniyor, setIzgaraYukleniyor] = useState(false);
   const [izgaraHata, setIzgaraHata] = useState<string | null>(null);
   const [seciliHucreIndex, setSeciliHucreIndex] = useState<number | null>(null);
+  const [baglamVeri, setBaglamVeri] = useState<BaglamVerisi | null>(null);
 
   useEffect(() => {
     let iptalEdildi = false;
@@ -116,6 +121,22 @@ export default function App() {
   useEffect(() => {
     setSeciliHucreIndex(null);
   }, [seciliAd, izgaraGoster]);
+
+  useEffect(() => {
+    let iptalEdildi = false;
+    (async () => {
+      try {
+        const veri = await baglamGetir();
+        if (!iptalEdildi) setBaglamVeri(veri);
+      } catch {
+        // Baglam katmani opsiyonel/bilgilendirme amacli: basarisiz olursa sessizce
+        // null birakilir, ana uygulama (skor/harita/oncelik listesi) COKMEZ.
+      }
+    })();
+    return () => {
+      iptalEdildi = true;
+    };
+  }, []);
 
   // ---------- Türetilmiş değerler (useMemo) ----------
 
@@ -272,12 +293,25 @@ export default function App() {
     return { ad: izgaraVeri.ad, hucreler: izgaraVeri.hucreler, hucreOzellikleri, tehlikeler, baselineTehlikeler: baseline, simulasyonAktif };
   }, [izgaraGoster, izgaraVeri, seciliAd, agirliklar, simYesil, seciliHucreIndex]);
 
+  const izgaraKesisenSiteler = useMemo(() => {
+    if (!izgaraKatmani || !seciliMahalle || !baglamVeri) return null;
+    return baglamVeri.siteler.filter((s) => siteMahalleyleKesisiyorMu(s, seciliMahalle.sinir));
+  }, [izgaraKatmani, seciliMahalle, baglamVeri]);
+
   const seciliHucreDetay = useMemo(() => {
     if (seciliHucreIndex === null || !izgaraKatmani) return null;
     const ozellik = izgaraKatmani.hucreOzellikleri[seciliHucreIndex];
     if (!ozellik) return null;
     return ozellik;
   }, [seciliHucreIndex, izgaraKatmani]);
+
+  const seciliHucreSiteAdi = useMemo(() => {
+    if (seciliHucreIndex === null || !izgaraKatmani || !baglamVeri) return null;
+    const hucre = izgaraKatmani.hucreler[seciliHucreIndex];
+    if (!hucre) return null;
+    const site = hucreIcindekiSiteyiBul(hucre, baglamVeri.siteler);
+    return site?.ad ?? null;
+  }, [seciliHucreIndex, izgaraKatmani, baglamVeri]);
 
   const hucreYuzdelikDilimi = useMemo(() => {
     if (seciliHucreIndex === null || !izgaraKatmani) return null;
@@ -429,7 +463,7 @@ export default function App() {
 
       <div
         className="flex-1 min-h-0 grid gap-5 p-5"
-        style={{ gridTemplateColumns: '2.7fr 1fr' }}
+        style={{ gridTemplateColumns: 'minmax(0, 2.7fr) minmax(0, 1fr)' }}
       >
         <Harita
           mahalleler={mahalleler}
@@ -440,10 +474,13 @@ export default function App() {
           onHucreSecim={onHucreSecim}
           seciliHucreIndex={seciliHucreIndex}
           butceSecilenAdlari={butceSecilenAdlari}
+          simulasyonOnizlemeAktif={simYesil > 0 || simNufusYuzde !== 0}
           izgaraKatmani={izgaraKatmani}
+          baglamVeri={baglamVeri}
+          kesisenSiteler={izgaraKesisenSiteler}
         />
 
-        <div className="flex flex-col gap-4 min-h-0 overflow-y-auto pr-1">
+        <div className="flex flex-col gap-4 min-h-0 min-w-0 overflow-y-auto pr-1">
           <OncelikListesi
             siraliSkorlar={oncelikListesiSirali}
             tipolojiByAd={tipolojiByAd}
@@ -478,6 +515,7 @@ export default function App() {
                 seciliHucreDetay={seciliHucreDetay}
                 hucreYuzdelikDilimi={hucreYuzdelikDilimi}
                 hucreTermalStresOnerisi={hucreTermalStresOnerisi}
+                seciliHucreSiteAdi={seciliHucreSiteAdi}
               />
               <Simulasyon
                 ayarlar={{
@@ -502,6 +540,11 @@ export default function App() {
               />
             </div>
           )}
+          <ImarHesaplayici
+            mahalleler={mahalleVerileri}
+            ayarlar={ayarlar}
+            varsayilanHedefRisk={ayarlar.renk_esikleri.dusuk}
+          />
         </div>
       </div>
     </div>

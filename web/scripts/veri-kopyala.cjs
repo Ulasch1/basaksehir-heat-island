@@ -23,3 +23,13 @@ if (!fs.existsSync(izgaraKaynak)) {
 }
 fs.copyFileSync(izgaraKaynak, izgaraHedef);
 console.log(`veri-kopyala: ${izgaraKaynak} -> ${izgaraHedef} kopyalandi.`);
+
+const baglamKaynak = path.resolve(__dirname, '..', '..', 'veri', 'baglam.json');
+const baglamHedef = path.join(hedefKlasor, 'baglam.json');
+
+if (!fs.existsSync(baglamKaynak)) {
+  console.error(`veri-kopyala: kaynak dosya bulunamadi: ${baglamKaynak}`);
+  process.exit(1);
+}
+fs.copyFileSync(baglamKaynak, baglamHedef);
+console.log(`veri-kopyala: ${baglamKaynak} -> ${baglamHedef} kopyalandi.`);

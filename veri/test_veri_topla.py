@@ -629,5 +629,109 @@ class IzgaraUretVeOlcTestleri(unittest.TestCase):
                 self.assertLess(lat, 42.0)
 
 
+class SitelerGecTestleri(unittest.TestCase):
+    """siteler_gec() fonksiyonu icin birim testleri."""
+
+    def test_isimli_site_dahil_edilir(self):
+        fc = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": {"tags": {"name": "Elmas Sitesi", "landuse": "residential"}},
+                    "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1]]]},
+                },
+            ],
+        }
+        sonuc = veri_topla.siteler_gec(fc)
+        self.assertEqual(len(sonuc), 1)
+        self.assertEqual(sonuc[0]["ad"], "Elmas Sitesi")
+
+    def test_adi_olmayan_site_atlanir(self):
+        fc = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": {"tags": {"landuse": "residential"}},
+                    "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1]]]},
+                },
+            ],
+        }
+        sonuc = veri_topla.siteler_gec(fc)
+        self.assertEqual(sonuc, [])
+
+    def test_gecersiz_geometrili_site_atlanir(self):
+        fc = {
+            "type": "FeatureCollection",
+            "features": [
+                {"type": "Feature", "properties": {"tags": {"name": "Bos Site"}}, "geometry": None},
+            ],
+        }
+        sonuc = veri_topla.siteler_gec(fc)
+        self.assertEqual(sonuc, [])
+
+    def test_ayni_isimli_farkli_bloklar_birlestirilmez(self):
+        """Ayni sitenin farkli etap/bloklari (orn. Arterium 1-6) GRUPLANMAZ, her biri ayri kalir."""
+        fc = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": {"tags": {"name": "Arterium 1"}},
+                    "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1]]]},
+                },
+                {
+                    "type": "Feature",
+                    "properties": {"tags": {"name": "Arterium 1"}},
+                    "geometry": {"type": "Polygon", "coordinates": [[[2, 2], [3, 2], [3, 3], [2, 3]]]},
+                },
+            ],
+        }
+        sonuc = veri_topla.siteler_gec(fc)
+        self.assertEqual(len(sonuc), 2)
+
+
+class YolAgiSiniflandirTestleri(unittest.TestCase):
+    """yol_agi_siniflandir() fonksiyonu icin birim testleri."""
+
+    def _cizgi_feature(self, highway_tipi):
+        return {
+            "type": "Feature",
+            "properties": {"tags": {"highway": highway_tipi}},
+            "geometry": {"type": "LineString", "coordinates": [[0, 0], [1, 1]]},
+        }
+
+    def test_buyuksehir_yol_tipleri_dogru_siniflandirilir(self):
+        for tip in ("trunk", "primary", "secondary"):
+            fc = {"type": "FeatureCollection", "features": [self._cizgi_feature(tip)]}
+            sonuc = veri_topla.yol_agi_siniflandir(fc)
+            self.assertEqual(len(sonuc), 1)
+            self.assertEqual(sonuc[0]["sorumluluk"], "buyuksehir")
+            self.assertEqual(sonuc[0]["highway_tipi"], tip)
+
+    def test_ilce_yol_tipleri_dogru_siniflandirilir(self):
+        for tip in ("tertiary", "unclassified", "residential"):
+            fc = {"type": "FeatureCollection", "features": [self._cizgi_feature(tip)]}
+            sonuc = veri_topla.yol_agi_siniflandir(fc)
+            self.assertEqual(len(sonuc), 1)
+            self.assertEqual(sonuc[0]["sorumluluk"], "ilce")
+
+    def test_taninmayan_highway_tipi_atlanir(self):
+        fc = {"type": "FeatureCollection", "features": [self._cizgi_feature("footway")]}
+        sonuc = veri_topla.yol_agi_siniflandir(fc)
+        self.assertEqual(sonuc, [])
+
+    def test_gecersiz_geometrili_segment_atlanir(self):
+        fc = {
+            "type": "FeatureCollection",
+            "features": [
+                {"type": "Feature", "properties": {"tags": {"highway": "primary"}}, "geometry": None},
+            ],
+        }
+        sonuc = veri_topla.yol_agi_siniflandir(fc)
+        self.assertEqual(sonuc, [])
+
+
 if __name__ == "__main__":
     unittest.main()

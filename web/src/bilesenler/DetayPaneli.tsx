@@ -7,6 +7,7 @@ import {
 } from 'recharts';
 import { riskRengi } from '../renk';
 import type { Mahalle } from '../veriKaynagi';
+import { hesaplaZarfOrani } from '../skorHesapla';
 
 interface DetayPaneliProps {
   mahalle: Mahalle;
@@ -27,6 +28,7 @@ interface DetayPaneliProps {
   seciliHucreDetay: { yesil_alan_orani: number; bina_yogunlugu: number; tehlike: number } | null;
   hucreYuzdelikDilimi: number | null;
   hucreTermalStresOnerisi: string | null;
+  seciliHucreSiteAdi: string | null;
 }
 
 function buildChartData(
@@ -77,10 +79,15 @@ export default function DetayPaneli({
   seciliHucreDetay,
   hucreYuzdelikDilimi,
   hucreTermalStresOnerisi,
+  seciliHucreSiteAdi,
 }: DetayPaneliProps) {
   const yesilEksikligi = (1 - mahalle.yesil_alan_orani) * 100;
   const binaYuzde = mahalle.bina_yogunlugu * 100;
   const maruziyetYuzde = skor.maruziyet * 100;
+
+  const zarfOraniYuzde = mahalle.alan_km2 > 0
+    ? hesaplaZarfOrani(mahalle.alan_km2, mahalle.zarf_alan_km2) * 100
+    : null;
   const riskYuzde = skor.risk * 100;
   const riskColor = riskRengi(skor.risk, renkEsikleri);
 
@@ -118,6 +125,12 @@ export default function DetayPaneli({
 
       {/* Detay çubukları – 4 satır */}
       <div className="flex flex-col gap-2">
+        {zarfOraniYuzde !== null && (
+          <div className="text-[10px] text-muted -mb-1">
+            Aşağıdaki iki oran, mahallenin %{zarfOraniYuzde.toFixed(0)}'ini oluşturan yerleşim
+            alanına göre hesaplanıyor.
+          </div>
+        )}
         <div>
           <div className="flex justify-between text-[11px] text-muted mb-0.5">
             <span>Yeşil Alan Eksikliği</span>
@@ -306,6 +319,12 @@ export default function DetayPaneli({
                 )}
               </span>
             </div>
+            {seciliHucreSiteAdi && (
+              <div className="flex justify-between">
+                <span>Site</span>
+                <span className="font-medium text-right">{seciliHucreSiteAdi}</span>
+              </div>
+            )}
           </div>
           {hucreTermalStresOnerisi && (
             <div className="mt-2 bg-risk-yuksek/10 border border-risk-yuksek/40 text-ink text-xs rounded-lg px-3 py-2">

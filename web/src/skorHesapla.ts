@@ -7,9 +7,9 @@
  * - En yuksek tehlike ve en yuksek risk sahibi mahallelerin farkli olup olmadigini tespit eder.
  */
 
-import { hesaplaTehlike, olcekleMaruziyet, hesaplaRisk, simuleNufus } from './skor';
+import { hesaplaTehlike, olcekleMaruziyet, hesaplaRisk, simuleNufus, hesaplaGerekliYesilAlanOrani, maruziyetYeniMahalleyleHesapla } from './skor';
 import type { TehlikeAgirliklari, MahalleGirdi } from './skor';
-import type { MahalleSinir } from './veriKaynagi';
+import type { MahalleSinir, BaglamSite } from './veriKaynagi';
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
 
 export interface MahalleVeri {
@@ -471,9 +471,205 @@ export function hucreTermalStresOnerisiBelirle(
   if (hucreTehlike >= esikler.tehlike && maruziyet >= esikler.maruziyet) {
     const baskin = hucreBaskinBileseniBelirle(yesilAlanOrani, binaYogunlugu, agirliklar);
     if (baskin === 'bina_yogunlugu') {
-      return 'Yüksek nüfus yoğunluğu ısı stresini artırıyor. Yatayda ağaçlandırma için yer yoksa, bu hücrede gölgelendirme yapıları (pergola, tenteli yaya geçidi) ve geçirgen/su tutan zemin kaplaması öncelikli olmalıdır.';
+      return 'Yüksek nüfus yoğunluğu ısı stresini artırıyor. Bu hücrede tehlikenin asıl kaynağı bina yoğunluğu; yatayda ağaçlandırma için yer kısıtlı olduğundan gölgelendirme yapıları (pergola, tenteli yaya geçidi) ve geçirgen/su tutan zemin kaplaması öncelikli olmalıdır.';
     }
-    return 'Yüksek nüfus yoğunluğu ısı stresini artırıyor. Bu hücrede bina yoğunluğu düşük, yani ağaçlandırma için fiziksel yer var — aktif ağaçlandırma ve yeşil alan kazanımı önceliklendirilmelidir.';
+    return 'Yüksek nüfus yoğunluğu ısı stresini artırıyor. Bu hücrede tehlikenin asıl kaynağı yeşil alan eksikliği, bina yoğunluğu değil; bina zaten hücrenin küçük bir kısmını kaplıyor, dikim için fiziksel yer var. Bu nedenle aktif ağaçlandırma ve yeşil alan kazanımı önceliklendirilmelidir.';
   }
   return null;
+}
+
+export function noktaHalkaIcindeMi(nokta: number[], halka: number[][]): boolean {
+  let icinde = false;
+  for (let i = 0, j = halka.length - 1; i < halka.length; j = i++) {
+    const xi = halka[i][0], yi = halka[i][1];
+    const xj = halka[j][0], yj = halka[j][1];
+    const kesisiyorMu = (yi > nokta[1]) !== (yj > nokta[1]) &&
+      nokta[0] < ((xj - xi) * (nokta[1] - yi)) / (yj - yi) + xi;
+    if (kesisiyorMu) icinde = !icinde;
+  }
+  return icinde;
+}
+
+export function noktaTekPoligondaMi(nokta: number[], poligon: number[][][]): boolean {
+  if (poligon.length === 0) return false;
+  const disHalka = poligon[0];
+  const icindeDis = noktaHalkaIcindeMi(nokta, disHalka);
+  if (!icindeDis) return false;
+  for (let i = 1; i < poligon.length; i++) {
+    if (noktaHalkaIcindeMi(nokta, poligon[i])) return false;
+  }
+  return true;
+}
+
+export function noktaSinirIcindeMi(nokta: number[], sinir: MahalleSinir): boolean {
+  if (sinir.type === 'Polygon') {
+    return noktaTekPoligondaMi(nokta, sinir.coordinates as number[][][]);
+  }
+  if (sinir.type === 'MultiPolygon') {
+    const poligonlar = sinir.coordinates as number[][][][];
+    for (const poligon of poligonlar) {
+      if (noktaTekPoligondaMi(nokta, poligon)) return true;
+    }
+  }
+  return false;
+}
+
+export function hucreMerkeziHesapla(sinir: MahalleSinir): [number, number] | null {
+  const noktalar: number[][] = [];
+  if (sinir.type === 'Polygon') {
+    const disHalka = (sinir.coordinates as number[][][])[0];
+    if (disHalka && disHalka.length > 0) {
+      const halkaNoktalari = disHalka.slice(0, -1);
+      noktalar.push(...halkaNoktalari);
+    }
+  } else if (sinir.type === 'MultiPolygon') {
+    const poligonlar = sinir.coordinates as number[][][][];
+    for (const poligon of poligonlar) {
+      const disHalka = poligon[0];
+      if (disHalka && disHalka.length > 0) {
+        const halkaNoktalari = disHalka.slice(0, -1);
+        noktalar.push(...halkaNoktalari);
+      }
+    }
+  }
+  if (noktalar.length === 0) return null;
+  let sumX = 0, sumY = 0;
+  for (const [x, y] of noktalar) {
+    sumX += x;
+    sumY += y;
+  }
+  return [sumX / noktalar.length, sumY / noktalar.length];
+}
+
+export function hucreIcindekiSiteyiBul(
+  hucre: { sinir: MahalleSinir },
+  siteler: BaglamSite[]
+): BaglamSite | null {
+  const merkez = hucreMerkeziHesapla(hucre.sinir);
+  if (!merkez) return null;
+  for (const site of siteler) {
+    if (noktaSinirIcindeMi(merkez, site.sinir)) return site;
+  }
+  return null;
+}
+
+function sinirBoundingBoxHesapla(sinir: MahalleSinir): { minX: number; minY: number; maxX: number; maxY: number } | null {
+  const noktalar: number[][] = [];
+  if (sinir.type === 'Polygon') {
+    const halkalar = sinir.coordinates as number[][][];
+    for (const halka of halkalar) {
+      noktalar.push(...halka);
+    }
+  } else if (sinir.type === 'MultiPolygon') {
+    const poligonlar = sinir.coordinates as number[][][][];
+    for (const poligon of poligonlar) {
+      for (const halka of poligon) {
+        noktalar.push(...halka);
+      }
+    }
+  }
+  if (noktalar.length === 0) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [x, y] of noktalar) {
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+function boundingBoxlarKesisiyorMu(
+  a: { minX: number; minY: number; maxX: number; maxY: number },
+  b: { minX: number; minY: number; maxX: number; maxY: number }
+): boolean {
+  return a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;
+}
+
+export function siteMahalleyleKesisiyorMu(site: BaglamSite, mahalleSinir: MahalleSinir): boolean {
+  const siteBbox = sinirBoundingBoxHesapla(site.sinir);
+  const mahalleBbox = sinirBoundingBoxHesapla(mahalleSinir);
+  if (!siteBbox || !mahalleBbox) return false;
+  return boundingBoxlarKesisiyorMu(siteBbox, mahalleBbox);
+}
+
+/**
+ * Yerlesim zarfinin (zarf_alan_km2) mahallenin toplam idari alanina (alan_km2) oranini
+ * hesaplar. 0-1 arasi bir deger doner (diger oranlarla - bina_yogunlugu, yesil_alan_orani -
+ * ayni birim/olcek, gosterimde cagiran taraf * 100 ile yuzdeye cevirir). Zarf tanimi geregi
+ * (bina tamponu + mahalle siniriyla kesisim) zarf alani mahalle alanini asamaz, yani deger
+ * matematiksel olarak [0,1] araliginda olmali; alanKm2 <= 0 ise (olmamasi gereken ama
+ * savunmaci kontrol) hata firlatir - projedeki diger saf fonksiyonlarla (skor.ts'teki
+ * hesaplaTehlike/olcekleMaruziyet/simuleNufus, bu dosyadaki hesaplaProjeksiyonRiski) AYNI
+ * konvansiyon: gecersiz sayisal girdi icin throw new Error, sessizce 0 donup gizlememek.
+ */
+export function hesaplaZarfOrani(alanKm2: number, zarfAlanKm2: number): number {
+  if (alanKm2 <= 0) {
+    throw new Error('hesaplaZarfOrani: alanKm2 sifir veya negatif olamaz');
+  }
+  return zarfAlanKm2 / alanKm2;
+}
+
+export interface ImarOnDegerlendirmeSonucu {
+  projeMaruziyeti: number;
+  hedefTehlike: number;
+  mumkun: boolean;
+  gerekliYesilAlanOrani: number | null;
+}
+
+/**
+ * Imar plani on degerlendirme hesaplayicisi.
+ *
+ * Bu fonksiyon, mevcut skor formullerinin (skor.ts) CEBIRSEL TERSINI kullanir;
+ * YENI bir formül degil, var olan hesaplarin ters yonde cozulmesidir.
+ * Calisma adimlari:
+ * 1. Projenin kendi nufus yogunlugunu mevcut mahalle yogunluklarina ekleyip
+ *    olcekleMaruziyet ile yeni maruziyetini hesaplar.
+ * 2. Hedef tehlikeyi, hedef riskin proje maruziyetine bolunmesiyle bulur.
+ * 3. hesaplaTehlike'nin cebirsel tersi ile bu hedef tehlikeyi saglayacak
+ *    gerekli yesil alan oranini cozer; mumkun degilse (y > 1) raporlar.
+ *
+ * @param mahalleler - mevcut mahalle verileri (ad, yesilAlanOrani, binaYogunlugu, nufus, zarfAlanKm2)
+ * @param projeAlanKm2 - yeni projenin yerlesim zarfi alani (km2)
+ * @param projeNufus - projenin hedef nufusu
+ * @param projeBinaYogunlugu - projenin sabit bina yogunlugu
+ * @param hedefRisk - ulasilmak istenen risk skoru
+ * @param ayarlar - agirlik ve alt sinir ayarlari
+ * @returns ImarOnDegerlendirmeSonucu
+ * @throws projeAlanKm2 <= 0 hatasi
+ */
+export function hesaplaImarOnDegerlendirme(
+  mahalleler: MahalleVeri[],
+  projeAlanKm2: number,
+  projeNufus: number,
+  projeBinaYogunlugu: number,
+  hedefRisk: number,
+  ayarlar: SkorAyarlari
+): ImarOnDegerlendirmeSonucu {
+  if (projeAlanKm2 <= 0) {
+    throw new Error('hesaplaImarOnDegerlendirme: projeAlanKm2 sifir veya negatif olamaz');
+  }
+
+  const mevcutYogunluklar = mahalleler.map((m) => m.nufus / m.zarfAlanKm2);
+  const projeYogunluk = projeNufus / projeAlanKm2;
+  const projeMaruziyeti = maruziyetYeniMahalleyleHesapla(
+    mevcutYogunluklar,
+    projeYogunluk,
+    ayarlar.maruziyet_alt_siniri
+  );
+
+  const hedefTehlike = hedefRisk / projeMaruziyeti;
+
+  const agirliklar: TehlikeAgirliklari = {
+    yesilAlan: ayarlar.tehlike_agirliklari.yesil_alan,
+    binaYogunlugu: ayarlar.tehlike_agirliklari.bina_yogunlugu,
+  };
+
+  const { mumkun, gerekliYesilAlanOrani } = hesaplaGerekliYesilAlanOrani(
+    hedefTehlike,
+    projeBinaYogunlugu,
+    agirliklar
+  );
+
+  return { projeMaruziyeti, hedefTehlike, mumkun, gerekliYesilAlanOrani };
 }

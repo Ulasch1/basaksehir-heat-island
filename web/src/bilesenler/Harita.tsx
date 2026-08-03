@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useRef, type ComponentType } from 'react';
+import { useMemo, useEffect, useRef, useState, type ComponentType } from 'react';
 import {
   MapContainer,
   TileLayer,
@@ -8,12 +8,12 @@ import {
 import type { GeoJSONProps } from 'react-leaflet';
 import type { FeatureCollection, Feature, Geometry } from 'geojson';
 import L from 'leaflet';
-import { riskRengi, KOVA_RENKLERI, golgeRengi } from '../renk';
-import type { Mahalle, IzgaraHucre } from '../veriKaynagi';
+import { riskRengi, KOVA_RENKLERI, golgeRengi, BAGLAM_RENKLERI, yolSorumlulukRengi, SIMULASYON_RENGI } from '../renk';
+import type { Mahalle, IzgaraHucre, BaglamVerisi, BaglamSite } from '../veriKaynagi';
 import { izgaraGeoJsonOlustur } from '../skorHesapla';
 import { dosyaIndir, dosyaAdiGuvenliHaleGetir } from '../dosyaIndir';
 
-const IzgaraGeoJSON = GeoJSON as unknown as ComponentType<
+const GeoJSONCanvas = GeoJSON as unknown as ComponentType<
   GeoJSONProps & { renderer?: L.Renderer }
 >;
 
@@ -26,6 +26,9 @@ interface HaritaProps {
   onHucreSecim: (index: number) => void;
   seciliHucreIndex: number | null;
   butceSecilenAdlari: Set<string>;
+  /** Secili mahallede yesil alan/nufus simulasyonlarindan biri aktifken true.
+   * Serbest mod ile simulasyon onizlemesini haritada gorsel olarak ayirmak icin. */
+  simulasyonOnizlemeAktif: boolean;
   izgaraKatmani: {
     ad: string;
     hucreler: IzgaraHucre[];
@@ -34,6 +37,8 @@ interface HaritaProps {
     baselineTehlikeler: number[];
     simulasyonAktif: boolean;
   } | null;
+  baglamVeri: BaglamVerisi | null;
+  kesisenSiteler: BaglamSite[] | null;
 }
 
 export default function Harita({
@@ -45,8 +50,19 @@ export default function Harita({
   onHucreSecim,
   seciliHucreIndex,
   butceSecilenAdlari,
+  simulasyonOnizlemeAktif,
   izgaraKatmani,
+  baglamVeri,
+  kesisenSiteler,
 }: HaritaProps) {
+  // Operasyonel baglam katmani - varsayilan olarak KAPALI (ana risk gorunumunu
+  // kirletmesin diye), kullanici acikca ac/kapat yapar. Bu state SADECE Harita.tsx'e
+  // ozeldir, App.tsx veya baska hicbir bilesen bunu okumaz/etkilemez.
+  const [siteGoster, setSiteGoster] = useState(false);
+  const [yolGoster, setYolGoster] = useState(false);
+  const [osbGoster, setOsbGoster] = useState(false);
+  const [renkGoster, setRenkGoster] = useState(true);
+
   // Tum mahalleleri iceren feature collection (sadece harita gorunumunu hesaplamak icin)
   const tumMahalleFeatureCollection = useMemo<FeatureCollection>(() => {
     const features: Feature[] = mahalleler.map((m) => ({
@@ -105,6 +121,112 @@ export default function Harita({
 
   const canvasRenderer = useMemo(() => L.canvas(), []);
 
+  const siteFeatureCollection = useMemo<FeatureCollection | null>(() => {
+    if (!baglamVeri || baglamVeri.siteler.length === 0) return null;
+    const features: Feature[] = baglamVeri.siteler.map((s) => ({
+      type: 'Feature' as const,
+      geometry: s.sinir as unknown as Geometry,
+      properties: { ad: s.ad },
+    }));
+    return { type: 'FeatureCollection', features };
+  }, [baglamVeri]);
+
+  const yolFeatureCollection = useMemo<FeatureCollection | null>(() => {
+    if (!baglamVeri || baglamVeri.yol_agi.length === 0) return null;
+    const features: Feature[] = baglamVeri.yol_agi.map((y) => ({
+      type: 'Feature' as const,
+      geometry: y.sinir as unknown as Geometry,
+      properties: { sorumluluk: y.sorumluluk, highway_tipi: y.highway_tipi },
+    }));
+    return { type: 'FeatureCollection', features };
+  }, [baglamVeri]);
+
+  const osbFeatureCollection = useMemo<FeatureCollection | null>(() => {
+    if (!baglamVeri || baglamVeri.disli_alanlar.length === 0) return null;
+    const features: Feature[] = baglamVeri.disli_alanlar.map((d) => ({
+      type: 'Feature' as const,
+      geometry: d.sinir as unknown as Geometry,
+      properties: { ad: d.ad, not: d.not },
+    }));
+    return { type: 'FeatureCollection', features };
+  }, [baglamVeri]);
+
+  const siteStyleFn = useMemo(
+    () => () => ({
+      fillColor: BAGLAM_RENKLERI.site,
+      fillOpacity: 0.5,
+      weight: 1,
+      color: BAGLAM_RENKLERI.siteKontur,
+    }),
+    [],
+  );
+
+  const otomatikSiteFeatureCollection = useMemo<FeatureCollection | null>(() => {
+    if (!kesisenSiteler || kesisenSiteler.length === 0) return null;
+    const features: Feature[] = kesisenSiteler.map((s) => ({
+      type: 'Feature' as const,
+      geometry: s.sinir as unknown as Geometry,
+      properties: { ad: s.ad },
+    }));
+    return { type: 'FeatureCollection', features };
+  }, [kesisenSiteler]);
+
+  const otomatikSiteStyleFn = useMemo(
+    () => () => ({
+      fillOpacity: 0,
+      weight: 1.5,
+      color: BAGLAM_RENKLERI.siteKontur,
+    }),
+    [],
+  );
+
+  const onEachSiteFeature = useMemo(
+    () => (feature: Feature, layer: L.Layer) => {
+      const ad = feature.properties?.ad as string | undefined;
+      if (ad) {
+        layer.bindPopup(ad);
+      }
+    },
+    [],
+  );
+
+  const yolStyleFn = useMemo(
+    () => (feature: Feature | undefined) => {
+      const sorumluluk = (feature?.properties?.sorumluluk as 'buyuksehir' | 'ilce') ?? 'ilce';
+      return { color: yolSorumlulukRengi(sorumluluk), weight: 3, opacity: 0.85 };
+    },
+    [],
+  );
+
+  const onEachYolFeature = useMemo(
+    () => (feature: Feature, layer: L.Layer) => {
+      const sorumluluk = feature.properties?.sorumluluk as string | undefined;
+      const highwayTipi = feature.properties?.highway_tipi as string | undefined;
+      const etiket = sorumluluk === 'buyuksehir' ? 'Büyükşehir (yaklaşık)' : 'İlçe (yaklaşık)';
+      layer.bindPopup(`${etiket} · ${highwayTipi ?? ''}`);
+    },
+    [],
+  );
+
+  const osbStyleFn = useMemo(
+    () => () => ({
+      fillOpacity: 0,
+      weight: 2,
+      color: BAGLAM_RENKLERI.osbSinir,
+      dashArray: '4,4',
+    }),
+    [],
+  );
+
+  const onEachOsbFeature = useMemo(
+    () => (feature: Feature, layer: L.Layer) => {
+      const ad = feature.properties?.ad as string | undefined;
+      const not = feature.properties?.not as string | undefined;
+      layer.bindPopup(`${ad ?? ''} — ${not ?? ''}`);
+    },
+    [],
+  );
+
   const onEachIzgaraFeature = useMemo(
     () => (feature: Feature, layer: L.Layer) => {
       layer.on('click', () => {
@@ -140,8 +262,8 @@ export default function Harita({
   const geoJsonKey = useMemo(() => {
     const budgetList = [...butceSecilenAdlari].sort().join(',');
     const izgaraAd = izgaraKatmani ? izgaraKatmani.ad : '';
-    return `${seciliAd ?? '-'}__${budgetList}__${izgaraAd}`;
-  }, [seciliAd, butceSecilenAdlari, izgaraKatmani]);
+    return `${seciliAd ?? '-'}__${budgetList}__${izgaraAd}__${renkGoster}__${simulasyonOnizlemeAktif}`;
+  }, [seciliAd, butceSecilenAdlari, izgaraKatmani, renkGoster, simulasyonOnizlemeAktif]);
 
   const izgaraGeoJsonKey = useMemo(() => {
     if (!izgaraKatmani) return '';
@@ -149,34 +271,56 @@ export default function Harita({
     return `izgara-${izgaraKatmani.ad}-${izgaraKatmani.simulasyonAktif}-${tehlikeToplami.toFixed(6)}`;
   }, [izgaraKatmani]);
 
+  const otomatikSiteKatmaniKey = useMemo(() => {
+    const adListesi = kesisenSiteler ? kesisenSiteler.map((s) => s.ad).join(",") : "";
+    return `kesisen-siteler-${seciliAd ?? "-"}-${adListesi}`;
+  }, [seciliAd, kesisenSiteler]);
+
   const styleFn = useMemo(
     () => (feature: Feature | undefined) => {
       if (!feature) return {};
       const ad = feature.properties?.ad as string | undefined;
       const skor = ad ? skorlarByAd[ad] : undefined;
       const risk = skor?.risk ?? 0;
-      const fillColor = riskRengi(risk, renkEsikleri);
 
       const isSelected = ad === seciliAd;
       const inBudget = ad ? butceSecilenAdlari.has(ad) : false;
+      // Simulasyon onizlemesi SADECE secili mahallede ve SADECE gorunumu etkiler:
+      // gercek risk (skorlarByAd) degismez, sadece bu mahallenin haritadaki dolgu/
+      // kontur rengi "serbest mod" risk paletinden cikip ayri bir simulasyon
+      // rengine gecer. Boylece "gordugum renk gercek mi, onizleme mi" hicbir zaman
+      // belirsiz kalmaz ve simulasyon rengi hicbir risk kovasiyla cakismaz.
+      const simulasyonOnizlemesi = isSelected && simulasyonOnizlemeAktif;
+
+      const fillColor = simulasyonOnizlemesi
+        ? SIMULASYON_RENGI.dolgu
+        : riskRengi(risk, renkEsikleri);
 
       const weight = isSelected ? 2.5 : inBudget ? 2 : 1;
-      const color = isSelected
-        ? 'oklch(0.55 0.15 150)'
-        : inBudget
-          ? 'oklch(0.6 0.14 150)'
-          : 'oklch(0.85 0.01 260)';
+      const color = simulasyonOnizlemesi
+        ? SIMULASYON_RENGI.kontur
+        : isSelected
+          ? 'oklch(0.55 0.15 150)'
+          : inBudget
+            ? 'oklch(0.6 0.14 150)'
+            : 'oklch(0.85 0.01 260)';
       const dashArray = inBudget && !isSelected ? '6,3' : undefined;
+
+      // Renk kapatıldığında (yol/altlık görmek için) dolgu tamamen şeffaf, sadece
+      // kontur kalır. Renk açıkken, bir mahalle seçiliyse diğerlerinin dolgusu
+      // soluklaştırılır ki seçili mahalle aynı risk kovasındaki (dolayısıyla aynı
+      // renkteki) komşusuyla görsel olarak birleşmesin.
+      const fillOpacity = !renkGoster ? 0 : isSelected ? 0.75 : seciliAd ? 0.3 : 0.75;
 
       return {
         fillColor,
-        fillOpacity: 0.75,
+        fillOpacity,
         weight,
         color,
         dashArray,
       };
     },
-    [skorlarByAd, renkEsikleri, seciliAd, butceSecilenAdlari],
+    [skorlarByAd, renkEsikleri, seciliAd, butceSecilenAdlari, renkGoster, simulasyonOnizlemeAktif],
   );
 
   const onEachFeature = useMemo(
@@ -231,11 +375,20 @@ export default function Harita({
             onEachFeature={onEachFeature}
           />
           {izgaraFeatureCollection && izgaraMinMax && (
-            <IzgaraGeoJSON
+            <GeoJSONCanvas
               key={izgaraGeoJsonKey}
               data={izgaraFeatureCollection as unknown as GeoJSON.GeoJsonObject}
               style={izgaraStyleFn}
               onEachFeature={onEachIzgaraFeature}
+              renderer={canvasRenderer}
+            />
+          )}
+          {izgaraKatmani && otomatikSiteFeatureCollection && (
+            <GeoJSONCanvas
+              key={otomatikSiteKatmaniKey}
+              data={otomatikSiteFeatureCollection as unknown as GeoJSON.GeoJsonObject}
+              style={otomatikSiteStyleFn}
+              onEachFeature={onEachSiteFeature}
               renderer={canvasRenderer}
             />
           )}
@@ -247,11 +400,45 @@ export default function Harita({
               interactive={false}
             />
           )}
+          {siteGoster && siteFeatureCollection && (
+            <GeoJSONCanvas
+              key="baglam-siteler"
+              data={siteFeatureCollection as unknown as GeoJSON.GeoJsonObject}
+              style={siteStyleFn}
+              onEachFeature={onEachSiteFeature}
+              renderer={canvasRenderer}
+            />
+          )}
+          {yolGoster && yolFeatureCollection && (
+            <GeoJSONCanvas
+              key="baglam-yol-agi"
+              data={yolFeatureCollection as unknown as GeoJSON.GeoJsonObject}
+              style={yolStyleFn}
+              onEachFeature={onEachYolFeature}
+              renderer={canvasRenderer}
+            />
+          )}
+          {osbGoster && osbFeatureCollection && (
+            <GeoJSON
+              key="baglam-osb"
+              data={osbFeatureCollection as unknown as GeoJSON.GeoJsonObject}
+              style={osbStyleFn}
+              onEachFeature={onEachOsbFeature}
+            />
+          )}
         </MapContainer>
       </div>
 
       <div className="flex items-center justify-between mt-2 text-xs text-muted flex-shrink-0">
         <div className="flex items-center gap-4">
+          <label className="flex items-center gap-1 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={renkGoster}
+              onChange={(e) => setRenkGoster(e.target.checked)}
+            />
+            Risk renklerini göster
+          </label>
           <span>Not: İkitelli OSB (sanayi bölgesi) veri kapsamı dışındadır.</span>
         </div>
         <div className="flex items-center gap-2">
@@ -270,6 +457,56 @@ export default function Harita({
           />
           <span>Yüksek</span>
         </div>
+      </div>
+
+      {simulasyonOnizlemeAktif && (
+        <div className="flex items-center gap-2 mt-2 text-xs flex-shrink-0">
+          <span
+            className="inline-block w-3 h-3 rounded-full flex-shrink-0"
+            style={{ backgroundColor: SIMULASYON_RENGI.dolgu }}
+          />
+          <span className="italic text-muted">
+            Mor: seçili mahallede simülasyon önizlemesi çalışıyor, bu gerçek mevcut risk
+            değil.
+          </span>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-3 mt-2 text-[11px] text-muted flex-shrink-0">
+        <span className="font-medium">Operasyonel bağlam:</span>
+        <label className="flex items-center gap-1 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={siteGoster}
+            onChange={(e) => setSiteGoster(e.target.checked)}
+            disabled={!baglamVeri}
+          />
+          Site sınırları
+        </label>
+        <label className="flex items-center gap-1 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={yolGoster}
+            onChange={(e) => setYolGoster(e.target.checked)}
+            disabled={!baglamVeri}
+          />
+          Yol ağı (büyükşehir/ilçe)
+        </label>
+        <label className="flex items-center gap-1 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={osbGoster}
+            onChange={(e) => setOsbGoster(e.target.checked)}
+            disabled={!baglamVeri}
+          />
+          İkitelli OSB sınırı
+        </label>
+        {yolGoster && (
+          <span className="italic text-[10px]">
+            ⚠ Yol ağı ayrımı OSM sınıflamasından türetilmiş bir YAKLAŞIKLIKTIR, resmi tescilli
+            anaarter listesine dayanmaz.
+          </span>
+        )}
       </div>
 
       <div className="text-[10px] text-muted mt-1 flex justify-between flex-shrink-0">

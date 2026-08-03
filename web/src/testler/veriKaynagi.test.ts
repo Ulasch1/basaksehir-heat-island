@@ -431,3 +431,71 @@ describe('izgaraGetir', () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('baglamGetir', () => {
+  const baglamFikstur = {
+    siteler: [{ ad: 'Elmas Sitesi', sinir: { type: 'Polygon', coordinates: [] } }],
+    yol_agi: [
+      { sinir: { type: 'LineString', coordinates: [] }, sorumluluk: 'buyuksehir', highway_tipi: 'primary' },
+    ],
+    yol_agi_aciklama: 'test aciklama',
+    disli_alanlar: [{ ad: 'Ikitelli OSB Mahallesi', sinir: { type: 'Polygon', coordinates: [] }, not: 'OSB yonetimi yetkisinde, belediye degil' }],
+  };
+
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('basarili fetch sonrasi baglam verisini dondurur', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => baglamFikstur,
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const { baglamGetir } = await import('../veriKaynagi');
+    const sonuc = await baglamGetir();
+    expect(sonuc).toEqual(baglamFikstur);
+    expect(mockFetch).toHaveBeenCalledWith('/baglam.json');
+  });
+
+  it('iki kez cagrildiginda fetch sadece bir kez yapilir (cache)', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => baglamFikstur,
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const { baglamGetir } = await import('../veriKaynagi');
+    await baglamGetir();
+    await baglamGetir();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetch cevap.ok=false oldugunda hata firlatir', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const { baglamGetir } = await import('../veriKaynagi');
+    await expect(baglamGetir()).rejects.toThrow('Baglam dosyasi yuklenemedi');
+  });
+
+  it('basarisiz fetch sonrasi cache sifirlanir, sonraki cagri fetch\'i tekrar dener', async () => {
+    const mockFetch = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 404, statusText: 'Not Found' })
+      .mockResolvedValueOnce({ ok: true, json: async () => baglamFikstur });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const { baglamGetir } = await import('../veriKaynagi');
+
+    await expect(baglamGetir()).rejects.toThrow('Baglam dosyasi yuklenemedi');
+
+    const sonuc = await baglamGetir();
+    expect(sonuc).toEqual(baglamFikstur);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+});
