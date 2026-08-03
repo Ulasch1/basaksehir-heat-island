@@ -9,15 +9,15 @@ interface SimulasyonProps {
   nufusSimYeniRank: number | null;
   yesilSimYeniRank: number | null;
   seciliBaseRank: number | null;
+  birlesikSenaryoSonuc: { risk: number; rank: number | null } | null;
   simNufusYuzde: number;
   onSimNufusYuzdeChange: (v: number) => void;
   simButce: number;
   onSimButceChange: (v: number) => void;
   butceKapsananRiskYuzdesi: number;
   butceSecilenler: Array<{ ad: string; rank: number }>;
-  senaryoModuAktif: boolean;
-  onSenaryoModuChange: (aktif: boolean) => void;
   izgaraGoster: boolean;
+  onIzgaraGosterChange: (deger: boolean) => void;
   hucreSeciliMi: boolean;
   simHedef: 'mahalle' | 'hucre';
   onSimHedefChange: (hedef: 'mahalle' | 'hucre') => void;
@@ -33,32 +33,22 @@ export default function Simulasyon({
   nufusSimYeniRank,
   yesilSimYeniRank,
   seciliBaseRank,
+  birlesikSenaryoSonuc,
   simNufusYuzde,
   onSimNufusYuzdeChange,
   simButce,
   onSimButceChange,
   butceKapsananRiskYuzdesi,
   butceSecilenler,
-  senaryoModuAktif,
-  onSenaryoModuChange,
   izgaraGoster,
+  onIzgaraGosterChange,
   hucreSeciliMi,
   simHedef,
   onSimHedefChange,
 }: SimulasyonProps) {
   return (
     <div className="bg-panel border border-contur rounded-xl p-4 flex flex-col gap-4">
-      <div className="flex items-center gap-3">
-        <h3 className="text-sm text-muted">Senaryo Simülasyonu</h3>
-        <label className="flex items-center gap-1 cursor-pointer text-xs text-muted">
-          <input
-            type="checkbox"
-            checked={senaryoModuAktif}
-            onChange={(e) => onSenaryoModuChange(e.target.checked)}
-          />
-          Senaryo modu
-        </label>
-      </div>
+      <h3 className="text-sm text-muted">Senaryo Simülasyonu</h3>
 
       <div className="flex flex-col gap-4">
         {/* Yeşil alan artışı */}
@@ -73,11 +63,20 @@ export default function Simulasyon({
             max={30}
             step={1}
             value={simYesil}
-            disabled={!senaryoModuAktif}
             onChange={(e) => onSimYesilChange(Number(e.target.value))}
             className="w-full accent-[oklch(0.6_0.14_150)]"
           />
-          {senaryoModuAktif && izgaraGoster && (
+          <label className="flex items-center gap-1.5 cursor-pointer select-none mt-2">
+            <input
+              type="checkbox"
+              className="w-3.5 h-3.5 accent-ink"
+              checked={izgaraGoster}
+              onChange={(e) => onIzgaraGosterChange(e.target.checked)}
+            />
+            <span className="text-[11px] text-muted">Mahalle içi ısı haritası göster</span>
+          </label>
+
+          {izgaraGoster && (
             <div className="mt-2 text-xs text-muted">
               <span className="block mb-1">Uygula:</span>
               <label className="flex items-center gap-1 cursor-pointer">
@@ -108,7 +107,7 @@ export default function Simulasyon({
               )}
             </div>
           )}
-          {seciliSkor && senaryoModuAktif && yesilSimSonuc && (
+          {seciliSkor && yesilSimSonuc && (
             <div className="text-[11px] text-muted mt-1">
               {seciliAd} risk: {seciliSkor.risk.toFixed(3)} →{' '}
               <span className="text-accent font-mono">
@@ -136,11 +135,10 @@ export default function Simulasyon({
             max={50}
             step={5}
             value={simNufusYuzde}
-            disabled={!senaryoModuAktif}
             onChange={(e) => onSimNufusYuzdeChange(Number(e.target.value))}
             className="w-full accent-[oklch(0.6_0.14_150)]"
           />
-          {seciliSkor && nufusSimYeniRisk !== null && senaryoModuAktif && (
+          {seciliSkor && nufusSimYeniRisk !== null && (
             <div className="text-[11px] text-muted mt-1">
               Risk: {seciliSkor.risk.toFixed(3)} →{' '}
               <span className="text-accent font-mono">
@@ -155,6 +153,22 @@ export default function Simulasyon({
             </div>
           )}
         </div>
+
+        {birlesikSenaryoSonuc && seciliSkor && (
+          <div className="text-[11px] p-2 rounded-md border border-accent/40 bg-accent/5">
+            <span className="font-medium">Birleşik senaryo:</span>{' '}
+            {seciliSkor.risk.toFixed(3)} →{' '}
+            <span className="text-accent font-mono">
+              {birlesikSenaryoSonuc.risk.toFixed(3)}
+            </span>
+            {seciliBaseRank !== null && birlesikSenaryoSonuc.rank !== null && (
+              <span>
+                {' '}
+                · Sıra: {seciliBaseRank} → {birlesikSenaryoSonuc.rank}
+              </span>
+            )}
+          </div>
+        )}
 
         <button
           onClick={() => {

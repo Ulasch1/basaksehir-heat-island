@@ -5,6 +5,7 @@ import {
   tehlikeRiskUyusmazliginiBul,
   hesaplaHucreTehlikeleri,
   hesaplaSimuleRank,
+  hesaplaBirlesikSenaryoSonucu,
   simuleHucreYesillestirme,
   siralaOncelikListesi,
   oncelikCsvSatirlariOlustur,
@@ -29,7 +30,7 @@ import {
 } from '../skorHesapla';
 import type { MahalleVeri, MahalleSkoru, SkorAyarlari } from '../skorHesapla';
 import type { TehlikeAgirliklari } from '../skor';
-import { hesaplaTehlike, hesaplaRisk } from '../skor';
+import { hesaplaTehlike, hesaplaRisk, simuleNufus, simuleYesilAlan } from '../skor';
 import type { MahalleSinir, BaglamSite } from '../veriKaynagi';
 
 // Sabit ayar objesi (ayarlar.json ile ayni yapi)
@@ -924,5 +925,103 @@ describe('hesaplaImarOnDegerlendirme testleri', () => {
         ayarlarSifirYesil
       )
     ).toThrow();
+  });
+});
+
+describe('hesaplaBirlesikSenaryoSonucu', () => {
+  // Ortak test mahalleleri (ayni A/B/C egitimi hesaplaSimuleRank testleriyle tutarli):
+  // A: y=0.2,b=0.8,n=100 -> tehlike=0.8
+  // B: y=0.5,b=0.5,n=200 -> tehlike=0.5
+  // C: y=0.8,b=0.2,n=300 -> tehlike=0.2
+  const ABC: MahalleVeri[] = [
+    { ad: 'A', yesilAlanOrani: 0.2, binaYogunlugu: 0.8, nufus: 100, zarfAlanKm2: 1.0 },
+    { ad: 'B', yesilAlanOrani: 0.5, binaYogunlugu: 0.5, nufus: 200, zarfAlanKm2: 1.0 },
+    { ad: 'C', yesilAlanOrani: 0.8, binaYogunlugu: 0.2, nufus: 300, zarfAlanKm2: 1.0 },
+  ];
+  const agirliklar: TehlikeAgirliklari = { yesilAlan: 0.5, binaYogunlugu: 0.5 };
+
+  function mahalleGirdiListesi() {
+    return ABC.map((m) => ({
+      ad: m.ad,
+      yesilAlanOrani: m.yesilAlanOrani,
+      binaYogunlugu: m.binaYogunlugu,
+      nufus: m.nufus,
+      alanKm2: m.zarfAlanKm2,
+    }));
+  }
+
+  it('(a) birlesik risk = yesil-sim tehlikesi * nufus-sim maruziyeti', () => {
+    const yesilSonuc = simuleYesilAlan(
+      { ad: 'A', yesilAlanOrani: 0.2, binaYogunlugu: 0.8, maruziyet: 0.1, agirliklar },
+      10,
+      1.0
+    );
+    const nufusSonuclari = simuleNufus(mahalleGirdiListesi(), 0, 0.5, agirliklar, 0.1);
+
+    const birlesik = hesaplaBirlesikSenaryoSonucu(yesilSonuc.tehlike, nufusSonuclari, 'A');
+    expect(birlesik).not.toBeNull();
+    const beklenenMaruziyet = nufusSonuclari.find((s) => s.ad === 'A')!.maruziyet;
+    expect(birlesik!.risk).toBeCloseTo(yesilSonuc.tehlike * beklenenMaruziyet, 10);
+  });
+
+  it('(b) sadece yesil alan slider aktifken (nufus artisOrani=0) birlesik risk yesil-sim sonucuna esittir', () => {
+    const yesilSonuc = simuleYesilAlan(
+      { ad: 'B', yesilAlanOrani: 0.5, binaYogunlugu: 0.5, maruziyet: 0.55, agirliklar },
+      15,
+      1.0
+    );
+    const nufusSonuclariSifir = simuleNufus(mahalleGirdiListesi(), 1, 0, agirliklar, 0.1);
+
+    const birlesik = hesaplaBirlesikSenaryoSonucu(yesilSonuc.tehlike, nufusSonuclariSifir, 'B');
+    expect(birlesik).not.toBeNull();
+    expect(birlesik!.risk).toBeCloseTo(yesilSonuc.risk, 10);
+  });
+
+  it('(b) sadece nufus slider aktifken (simYesil=0, yeniTehlike=baseline tehlike) birlesik risk nufus-sim sonucuna esittir', () => {
+    const mevcutSkorlar = hesaplaMevcutSkorlar(ABC, VARSAYILAN_AYARLAR);
+    const baselineTehlikeC = mevcutSkorlar[2].tehlike; // simYesil=0 -> tehlike degismez
+    const nufusSonuclari = simuleNufus(mahalleGirdiListesi(), 2, 0.75, agirliklar, 0.1);
+
+    const birlesik = hesaplaBirlesikSenaryoSonucu(baselineTehlikeC, nufusSonuclari, 'C');
+    expect(birlesik).not.toBeNull();
+    const beklenenRisk = nufusSonuclari.find((s) => s.ad === 'C')!.risk;
+    expect(birlesik!.risk).toBeCloseTo(beklenenRisk, 10);
+  });
+
+  it('(c) hucre bazli modda hucre-tehlikesi ile nufus-sim maruziyeti birlesir (baseline maruziyet degil)', () => {
+    const hucreler = [
+      { yesil_alan_orani: 0.1, bina_yogunlugu: 0.9 },
+      { yesil_alan_orani: 0.3, bina_yogunlugu: 0.7 },
+    ];
+    const hucreSonuc = hucreBazliMahalleSkoruHesapla(hucreler, 0.999, agirliklar)!;
+    expect(hucreSonuc).not.toBeNull();
+
+    const nufusSonuclari = simuleNufus(mahalleGirdiListesi(), 1, 0.2, agirliklar, 0.1);
+    const beklenenMaruziyet = nufusSonuclari.find((s) => s.ad === 'B')!.maruziyet;
+    expect(beklenenMaruziyet).not.toBeCloseTo(0.999, 2);
+
+    const birlesik = hesaplaBirlesikSenaryoSonucu(hucreSonuc.tehlike, nufusSonuclari, 'B');
+    expect(birlesik).not.toBeNull();
+    expect(birlesik!.risk).toBeCloseTo(hucreSonuc.tehlike * beklenenMaruziyet, 10);
+  });
+
+  it('(d) birlesik rank, diger mahallelerin nufus-sim SONRASI riskleriyle karsilastirilir (baseline ile degil)', () => {
+    const nufusSonuclari = simuleNufus(mahalleGirdiListesi(), 1, 2.0, agirliklar, 0.1);
+    const a = nufusSonuclari.find((s) => s.ad === 'A')!;
+    const b = nufusSonuclari.find((s) => s.ad === 'B')!;
+    const c = nufusSonuclari.find((s) => s.ad === 'C')!;
+    expect(a.risk).toBeCloseTo(0.08, 5);
+    expect(b.risk).toBeCloseTo(0.5, 5);
+    expect(c.risk).toBeCloseTo(0.092, 5);
+
+    const birlesik = hesaplaBirlesikSenaryoSonucu(0.7, nufusSonuclari, 'C');
+    expect(birlesik).not.toBeNull();
+    expect(birlesik!.risk).toBeCloseTo(0.322, 5);
+    expect(birlesik!.rank).toBe(2);
+  });
+
+  it('seciliAd nufusSimSonuclari icinde yoksa null doner', () => {
+    const nufusSonuclari = simuleNufus(mahalleGirdiListesi(), 0, 0.2, agirliklar, 0.1);
+    expect(hesaplaBirlesikSenaryoSonucu(0.5, nufusSonuclari, 'YokMahalle')).toBeNull();
   });
 });

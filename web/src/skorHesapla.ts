@@ -244,22 +244,69 @@ export function hucreTehlikeYuzdelikDilimiHesapla(
 }
 
 /**
- * Yesil alan simulasyonu SADECE secili mahallenin riskini degistirir, digerleri
- * baseline'da sabit kalir. Bu fonksiyon secili mahallenin yeni riskini mevcutSkorlar
- * dizisine uygulayip, risk azalan sirada yeniden siraladiginda secili mahallenin
- * yeni sirasini (1-indexed) dondurur.
+ * Bir mahallenin riski yeniRisk'e degistirilseydi, tum liste risk azalan sirada
+ * yeniden siralandiginda o mahallenin yeni sirasini (1-indexed) dondurur. skorlar
+ * parametresi baseline (mevcutSkorlar) veya baska bir simulasyonun (orn. nufus
+ * simulasyonunun TUM mahalleler icin urettigi sonuc listesi) olabilir - fonksiyon
+ * sadece ad/risk alanlarina bakar, listenin kaynagini bilmez/karismaz. Yesil alan
+ * simulasyonu tek basina SADECE secili mahallenin riskini degistirdigi icin
+ * (digerleri baseline'da sabit kalir) baseline liste ile cagirmak dogru sonucu verir;
+ * nufus simulasyonu TUM mahallelerin maruziyetini (ve dolayisiyla riskini) yeniden
+ * olcekledigi icin birlesik senaryo siralamasinda nufus-simulasyonlu liste ile
+ * cagirmak gerekir (bkz. hesaplaBirlesikSenaryoSonucu).
  */
 export function hesaplaSimuleRank(
-  mevcutSkorlar: MahalleSkoru[],
+  skorlar: { ad: string; risk: number }[],
   seciliAd: string,
   yeniRisk: number
 ): number | null {
-  const guncellenmis = mevcutSkorlar.map((s) =>
+  const guncellenmis = skorlar.map((s) =>
     s.ad === seciliAd ? { ...s, risk: yeniRisk } : s
   );
   const sirali = [...guncellenmis].sort((a, b) => b.risk - a.risk);
   const idx = sirali.findIndex((s) => s.ad === seciliAd);
   return idx >= 0 ? idx + 1 : null;
+}
+
+export interface BirlesikSenaryoSonucu {
+  risk: number;
+  rank: number | null;
+}
+
+/**
+ * Yesil alan ve nufus artisi simulasyonlarini TEK BIRLESIK SENARYO olarak birlestirir.
+ * Risk = Tehlike * Maruziyet oldugundan birlesim dogaldir: yeniTehlike parametresi
+ * yesil alan simulasyonundan gelir (mahalle-duzeyinde simuleYesilAlan veya hucre-
+ * duzeyinde hucreBazliMahalleSkoruHesapla - cagiran taraf hangisi gecerliyse onun
+ * .tehlike alanini verir, bu fonksiyon kaynagini bilmez/umursamaz), yeni maruziyet ise
+ * nufusSimSonuclari (skor.ts'teki simuleNufus'un TUM mahalleler icin urettigi sonuc
+ * dizisi) icindeki secili mahallenin maruziyetinden okunur.
+ *
+ * Birlesik rank hesabi icin nufusSimSonuclari dogrudan hesaplaSimuleRank'e gecilir
+ * (baseline mevcutSkorlar DEGIL): nufus simulasyonu TUM mahallelerin maruziyetini
+ * (ve dolayisiyla riskini) yeniden olcekleyebilir, oysa yesil alan simulasyonu SADECE
+ * secili mahalleyi etkiler - bu yuzden "diger mahalleler" karsilastirmasi nufus-
+ * simulasyonlu risklerle yapilmalidir.
+ *
+ * simYesil=0 iken yeniTehlike baseline tehlikeye esit olacagindan (simuleYesilAlan /
+ * hucreBazliMahalleSkoruHesapla'nin dogal sonucu) donen risk nufus-sim sonucuna esit
+ * olur; simNufusYuzde=0 iken nufusSimSonuclari'ndaki secili mahalle maruziyeti
+ * baseline'a esit olacagindan (simuleNufus artisOrani=0) donen risk yesil-sim
+ * sonucuna esit olur - yani "tek slider aktif" durumu ayri bir dallanma GEREKTIRMEZ,
+ * formulun dogal sonucudur.
+ *
+ * seciliAd nufusSimSonuclari icinde bulunamazsa null doner.
+ */
+export function hesaplaBirlesikSenaryoSonucu(
+  yeniTehlike: number,
+  nufusSimSonuclari: { ad: string; risk: number; maruziyet: number }[],
+  seciliAd: string
+): BirlesikSenaryoSonucu | null {
+  const seciliSonuc = nufusSimSonuclari.find((s) => s.ad === seciliAd);
+  if (!seciliSonuc) return null;
+  const risk = yeniTehlike * seciliSonuc.maruziyet;
+  const rank = hesaplaSimuleRank(nufusSimSonuclari, seciliAd, risk);
+  return { risk, rank };
 }
 
 /**

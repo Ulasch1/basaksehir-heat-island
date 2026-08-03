@@ -9,8 +9,8 @@ import type { GeoJSONProps } from 'react-leaflet';
 import type { FeatureCollection, Feature, Geometry } from 'geojson';
 import L from 'leaflet';
 import { riskRengi, KOVA_RENKLERI, golgeRengi, BAGLAM_RENKLERI, yolSorumlulukRengi, SIMULASYON_RENGI } from '../renk';
-import type { Mahalle, IzgaraHucre, BaglamVerisi, BaglamSite } from '../veriKaynagi';
-import { izgaraGeoJsonOlustur } from '../skorHesapla';
+import type { Mahalle, IzgaraHucre, BaglamVerisi, BaglamSite, MahalleSinir } from '../veriKaynagi';
+import { izgaraGeoJsonOlustur, hucreIcindekiSiteyiBul } from '../skorHesapla';
 import { dosyaIndir, dosyaAdiGuvenliHaleGetir } from '../dosyaIndir';
 
 const GeoJSONCanvas = GeoJSON as unknown as ComponentType<
@@ -26,6 +26,9 @@ interface HaritaProps {
   onHucreSecim: (index: number) => void;
   seciliHucreIndex: number | null;
   butceSecilenAdlari: Set<string>;
+  /** Bütçe kısıtı UI'sı artık Senaryo sekmesinde, bu yüzden alttaki açıklama metni
+   * sadece o sekme aktifken gösterilir. */
+  butceGorunumuAktif: boolean;
   /** Secili mahallede yesil alan/nufus simulasyonlarindan biri aktifken true.
    * Serbest mod ile simulasyon onizlemesini haritada gorsel olarak ayirmak icin. */
   simulasyonOnizlemeAktif: boolean;
@@ -51,6 +54,7 @@ export default function Harita({
   onHucreSecim,
   seciliHucreIndex,
   butceSecilenAdlari,
+  butceGorunumuAktif,
   simulasyonOnizlemeAktif,
   izgaraKatmani,
   baglamVeri,
@@ -234,8 +238,21 @@ export default function Harita({
         const hucreIndex = feature.properties?.hucreIndex as number | undefined;
         if (hucreIndex !== undefined) onHucreSecim(hucreIndex);
       });
+      // Bir hücre bir "site" poligonunun içinde kalıyorsa, üstteki site katmanı
+      // (interactive={false}) artık tıklamayı bloklamıyor; site bilgisini bunun
+      // yerine burada, hücrenin kendi üzerinde hover ile açılan bir baloncukla
+      // (tıklama gerekmeden) gösteriyoruz, böylece hücre her zaman tıklanabilir kalır.
+      if (kesisenSiteler && kesisenSiteler.length > 0) {
+        const site = hucreIcindekiSiteyiBul(
+          { sinir: feature.geometry as unknown as MahalleSinir },
+          kesisenSiteler,
+        );
+        if (site) {
+          layer.bindTooltip(site.ad, { sticky: true, direction: 'top' });
+        }
+      }
     },
-    [onHucreSecim],
+    [onHucreSecim, kesisenSiteler],
   );
 
   const izgaraStyleFn = useMemo(
@@ -389,8 +406,8 @@ export default function Harita({
               key={otomatikSiteKatmaniKey}
               data={otomatikSiteFeatureCollection as unknown as GeoJSON.GeoJsonObject}
               style={otomatikSiteStyleFn}
-              onEachFeature={onEachSiteFeature}
               renderer={canvasRenderer}
+              interactive={false}
             />
           )}
           {izgaraKatmani && seciliMahalleFeature && (
@@ -511,7 +528,7 @@ export default function Harita({
       </div>
 
       <div className="text-[10px] text-muted mt-1 flex justify-between flex-shrink-0">
-        <span>Kesikli kontur: bütçe kısıtında seçilen mahalleler</span>
+        <span>{butceGorunumuAktif ? 'Kesikli kontur: bütçe kısıtında seçilen mahalleler' : ''}</span>
         <span>© OpenStreetMap katkıcıları (ODbL) · TÜİK ADNKS</span>
       </div>
 
