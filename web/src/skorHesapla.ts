@@ -120,6 +120,63 @@ export function hesaplaProjeksiyonRiski(
   };
 }
 
+export interface TipolojiEtiketleme {
+  etiket: string;
+  mudahale: string;
+}
+
+/**
+ * AI kumeleme servisinin dondurdugu tipoloji index'i (0, 1, 2, ...) SEMANTIK
+ * OLARAK SABIT DEGILDIR - hangi index'in "yogun yapili" karaktere denk gelecegi
+ * veri setine ve KMeans'in ic isleyisine bagli, garanti edilmis bir sira yok.
+ * Bu fonksiyon index'in SAYISAL DEGERINE degil, o index'e atanan mahallelerin
+ * GERCEK bina yogunlugu ORTALAMASINA bakar, kumeleri bu ortalamaya gore
+ * (dusukten yuksege) siralar ve etiket/mudahale metnini bu SIRAYA gore esler.
+ * Boylece AI hangi index'i hangi gruba verirse versin, en dusuk yogunluklu
+ * grup her zaman siralamaDusuktenYuksege[0]'i alir. Canli AI ve statik yedek
+ * veri (kume merkezi bilgisi hic saklanmayan onbellek) icin AYNI mantikla
+ * calisir, cunku hesaplama sunucunun merkez bilgisine degil, zaten elde olan
+ * mahalle yogunluk verisine dayanir.
+ *
+ * Gozlenen farkli index sayisi ile siralamaDusuktenYuksege.length uyusmuyorsa
+ * (ornegin bir kume bu veri diliminde hic mahalle almadiysa) fazla index'ler
+ * esleme almadan atlanir; UI tarafi zaten "esleme bulunamadi" durumunu
+ * (etiket = undefined) destekliyor.
+ */
+export function tipolojiEtiketEslemesiTure(
+  tipolojiSonuclari: { ad: string; tipoloji: number }[],
+  mahalleVerileri: { ad: string; binaYogunlugu: number }[],
+  siralamaDusuktenYuksege: TipolojiEtiketleme[]
+): Record<string, TipolojiEtiketleme> {
+  const binaYogunluguByAd = new Map(mahalleVerileri.map((m) => [m.ad, m.binaYogunlugu]));
+
+  const toplamByIndex = new Map<number, { toplam: number; sayi: number }>();
+  for (const s of tipolojiSonuclari) {
+    const binaYogunlugu = binaYogunluguByAd.get(s.ad);
+    if (binaYogunlugu === undefined) continue;
+    const mevcut = toplamByIndex.get(s.tipoloji) ?? { toplam: 0, sayi: 0 };
+    mevcut.toplam += binaYogunlugu;
+    mevcut.sayi += 1;
+    toplamByIndex.set(s.tipoloji, mevcut);
+  }
+
+  const ortalamaByIndex = [...toplamByIndex.entries()].map(([index, { toplam, sayi }]) => ({
+    index,
+    ortalamaBinaYogunlugu: toplam / sayi,
+  }));
+  ortalamaByIndex.sort((a, b) => a.ortalamaBinaYogunlugu - b.ortalamaBinaYogunlugu);
+
+  const esleme: Record<string, TipolojiEtiketleme> = {};
+  ortalamaByIndex.forEach((item, sira) => {
+    const etiketleme = siralamaDusuktenYuksege[sira];
+    if (etiketleme) {
+      esleme[String(item.index)] = etiketleme;
+    }
+  });
+
+  return esleme;
+}
+
 export interface TehlikeRiskUyusmazligi {
   uyusmuyor: boolean;
   enYuksekTehlikeAd: string | null;
@@ -169,6 +226,21 @@ export function hesaplaHucreTehlikeleri(
   return hucreler.map((h) =>
     hesaplaTehlike(h.yesil_alan_orani, h.bina_yogunlugu, agirliklar)
   );
+}
+
+/**
+ * Verilen bir hücre tehlikesi ve tüm hücre tehlikeleri dizisi ile hücrenin
+ * yüzdelik dilimini hesaplar: hücrenin tehlikesi, tüm tehlikelerin yüzde
+ * kaçına eşit veya büyüktür (daha yüksek tehlikeli hücre sayısına göre).
+ * Boş dizi için null döner.
+ */
+export function hucreTehlikeYuzdelikDilimiHesapla(
+  hucreTehlike: number,
+  tumHucreTehlikeleri: number[]
+): number | null {
+  if (tumHucreTehlikeleri.length === 0) return null;
+  const ustSayisi = tumHucreTehlikeleri.filter((t) => t >= hucreTehlike).length;
+  return (ustSayisi / tumHucreTehlikeleri.length) * 100;
 }
 
 /**
@@ -262,6 +334,21 @@ export function simuleHucreYesillestirme(
   return sonuc;
 }
 
+export function hucreBazliMahalleSkoruHesapla(
+  hucreOzellikleri: { yesil_alan_orani: number; bina_yogunlugu: number }[],
+  maruziyet: number,
+  agirliklar: TehlikeAgirliklari
+): { tehlike: number; maruziyet: number; risk: number } | null {
+  if (hucreOzellikleri.length === 0) return null;
+  const ortalamaYesil =
+    hucreOzellikleri.reduce((toplam, h) => toplam + h.yesil_alan_orani, 0) / hucreOzellikleri.length;
+  const ortalamaBina =
+    hucreOzellikleri.reduce((toplam, h) => toplam + h.bina_yogunlugu, 0) / hucreOzellikleri.length;
+  const tehlike = hesaplaTehlike(ortalamaYesil, ortalamaBina, agirliklar);
+  const risk = hesaplaRisk(tehlike, maruziyet);
+  return { tehlike, maruziyet, risk };
+}
+
 export type SiralamaModu = 'risk' | 'yesil' | 'bina';
 
 export function siralaOncelikListesi(
@@ -346,4 +433,47 @@ export function izgaraGeoJsonOlustur(
     },
   }));
   return { type: 'FeatureCollection', features };
+}
+
+export interface TermalStresEsikleri {
+  tehlike: number;
+  maruziyet: number;
+}
+
+export type BaskinBilesen = 'bina_yogunlugu' | 'yesil_alan_eksikligi';
+
+export function hucreBaskinBileseniBelirle(
+  yesilAlanOrani: number,
+  binaYogunlugu: number,
+  agirliklar: TehlikeAgirliklari
+): BaskinBilesen {
+  const yesilKatkisi = agirliklar.yesilAlan * (1 - yesilAlanOrani);
+  const binaKatkisi = agirliklar.binaYogunlugu * binaYogunlugu;
+  return binaKatkisi > yesilKatkisi ? 'bina_yogunlugu' : 'yesil_alan_eksikligi';
+}
+
+/**
+ * Senaryo 3 (Termal Stres ve Nüfus Baskısı): seçili ızgara hücresinin tehlikesi VE
+ * seçili mahallenin maruziyeti (nüfus baskısı) birlikte eşik/üzerindeyse dinamik bir
+ * mikro-müdahale önerisi metni döner, aksi halde null döner. Sınırda eşitlik (>=) de
+ * öneri tetikler. hucreTehlike ve maruziyet farklı bir düzlemden geliyor olsa bile
+ * (hücre vs mahalle) bu fonksiyon sadece iki sayı ve iki eşik karşılaştırır, kaynak
+ * bilmez - çağıran taraf (App.tsx) hangi hücre/mahalle olduğunu seçer.
+ */
+export function hucreTermalStresOnerisiBelirle(
+  hucreTehlike: number,
+  maruziyet: number,
+  yesilAlanOrani: number,
+  binaYogunlugu: number,
+  agirliklar: TehlikeAgirliklari,
+  esikler: TermalStresEsikleri
+): string | null {
+  if (hucreTehlike >= esikler.tehlike && maruziyet >= esikler.maruziyet) {
+    const baskin = hucreBaskinBileseniBelirle(yesilAlanOrani, binaYogunlugu, agirliklar);
+    if (baskin === 'bina_yogunlugu') {
+      return 'Yüksek nüfus yoğunluğu ısı stresini artırıyor. Yatayda ağaçlandırma için yer yoksa, bu hücrede gölgelendirme yapıları (pergola, tenteli yaya geçidi) ve geçirgen/su tutan zemin kaplaması öncelikli olmalıdır.';
+    }
+    return 'Yüksek nüfus yoğunluğu ısı stresini artırıyor. Bu hücrede bina yoğunluğu düşük, yani ağaçlandırma için fiziksel yer var — aktif ağaçlandırma ve yeşil alan kazanımı önceliklendirilmelidir.';
+  }
+  return null;
 }

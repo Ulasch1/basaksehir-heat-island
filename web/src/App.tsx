@@ -13,10 +13,16 @@ import {
   hesaplaSimuleRank,
   simuleHucreYesillestirme,
   siralaOncelikListesi,
+  hucreTermalStresOnerisiBelirle,
+  hucreTehlikeYuzdelikDilimiHesapla,
+  hucreBazliMahalleSkoruHesapla,
+  tipolojiEtiketEslemesiTure,
   type MahalleVeri,
   type MahalleSkoru,
   type ProjeksiyonRiski,
   type SiralamaModu,
+  type TermalStresEsikleri,
+  type TipolojiEtiketleme,
 } from './skorHesapla';
 import { simuleYesilAlan, simuleNufus, secBudceKisitli } from './skor';
 import type { MahalleGirdi, TehlikeAgirliklari } from './skor';
@@ -27,11 +33,6 @@ import OncelikListesi from './bilesenler/OncelikListesi';
 import DetayPaneli from './bilesenler/DetayPaneli';
 import Simulasyon from './bilesenler/Simulasyon';
 import MahalleArama from './bilesenler/MahalleArama';
-
-interface TipolojiEslemeKaydi {
-  etiket: string;
-  mudahale: string;
-}
 
 export default function App() {
   const veriKaynagi = useMemo(() => varsayilanVeriKaynagi(), []);
@@ -184,11 +185,22 @@ export default function App() {
     return tipolojiByAd[seciliAd] ?? null;
   }, [tipolojiByAd, seciliAd]);
 
-  const seciliTipolojiBilgi = useMemo<TipolojiEslemeKaydi | null>(() => {
+  // AI kumeleme index'i (0/1/2) semantik olarak sabit degil (bkz. skorHesapla.ts
+  // tipolojiEtiketEslemesiTure dokumantasyonu); esleme her tipoloji fetch'inde
+  // gozlenen kumelerin GERCEK bina yogunlugu ortalamasindan yeniden turetilir.
+  const tipolojiEtiketEslemesi = useMemo<Record<string, TipolojiEtiketleme>>(() => {
+    if (!tipoloji || mahalleVerileri.length === 0) return {};
+    return tipolojiEtiketEslemesiTure(
+      tipoloji.sonuclar,
+      mahalleVerileri,
+      ayarlar.tipoloji_mudahale_siralamasi,
+    );
+  }, [tipoloji, mahalleVerileri]);
+
+  const seciliTipolojiBilgi = useMemo<TipolojiEtiketleme | null>(() => {
     if (seciliTipolojiIndex == null) return null;
-    const esleme = ayarlar.tipoloji_mudahale_eslemesi as Record<string, TipolojiEslemeKaydi>;
-    return esleme[String(seciliTipolojiIndex)] ?? null;
-  }, [seciliTipolojiIndex]);
+    return tipolojiEtiketEslemesi[String(seciliTipolojiIndex)] ?? null;
+  }, [seciliTipolojiIndex, tipolojiEtiketEslemesi]);
 
   const projeksiyonByAd = useMemo<Record<string, { tahminiNufus: number; hedefYil: number }>>(() => {
     if (!projeksiyon) return {};
@@ -228,21 +240,37 @@ export default function App() {
     }
     const simulasyonAktif = simYesil > 0;
     const baseline = hesaplaHucreTehlikeleri(izgaraVeri.hucreler, agirliklar);
-    const hucreOzellikleri = simulasyonAktif
-      ? simuleHucreYesillestirme(
-          izgaraVeri.hucreler,
-          simYesil,
-          ayarlar.simulasyon_bina_azaltma_katsayisi,
-          agirliklar
-        )
-      : izgaraVeri.hucreler.map((h, i) => ({
-          yesil_alan_orani: h.yesil_alan_orani,
-          bina_yogunlugu: h.bina_yogunlugu,
-          tehlike: baseline[i],
-        }));
+    const baselineOzellikleri = izgaraVeri.hucreler.map((h, i) => ({
+      yesil_alan_orani: h.yesil_alan_orani,
+      bina_yogunlugu: h.bina_yogunlugu,
+      tehlike: baseline[i],
+    }));
+
+    let hucreOzellikleri: { yesil_alan_orani: number; bina_yogunlugu: number; tehlike: number }[];
+
+    if (!simulasyonAktif) {
+      hucreOzellikleri = baselineOzellikleri;
+    } else if (seciliHucreIndex !== null && izgaraVeri.hucreler[seciliHucreIndex]) {
+      hucreOzellikleri = [...baselineOzellikleri];
+      const tekSonuc = simuleHucreYesillestirme(
+        [izgaraVeri.hucreler[seciliHucreIndex]],
+        simYesil,
+        ayarlar.simulasyon_bina_azaltma_katsayisi,
+        agirliklar
+      );
+      hucreOzellikleri[seciliHucreIndex] = tekSonuc[0];
+    } else {
+      hucreOzellikleri = simuleHucreYesillestirme(
+        izgaraVeri.hucreler,
+        simYesil,
+        ayarlar.simulasyon_bina_azaltma_katsayisi,
+        agirliklar
+      );
+    }
+
     const tehlikeler = hucreOzellikleri.map((h) => h.tehlike);
     return { ad: izgaraVeri.ad, hucreler: izgaraVeri.hucreler, hucreOzellikleri, tehlikeler, baselineTehlikeler: baseline, simulasyonAktif };
-  }, [izgaraGoster, izgaraVeri, seciliAd, agirliklar, simYesil]);
+  }, [izgaraGoster, izgaraVeri, seciliAd, agirliklar, simYesil, seciliHucreIndex]);
 
   const seciliHucreDetay = useMemo(() => {
     if (seciliHucreIndex === null || !izgaraKatmani) return null;
@@ -250,6 +278,25 @@ export default function App() {
     if (!ozellik) return null;
     return ozellik;
   }, [seciliHucreIndex, izgaraKatmani]);
+
+  const hucreYuzdelikDilimi = useMemo(() => {
+    if (seciliHucreIndex === null || !izgaraKatmani) return null;
+    const hucreTehlike = izgaraKatmani.baselineTehlikeler[seciliHucreIndex];
+    if (hucreTehlike === undefined) return null;
+    return hucreTehlikeYuzdelikDilimiHesapla(hucreTehlike, izgaraKatmani.baselineTehlikeler);
+  }, [seciliHucreIndex, izgaraKatmani]);
+
+  const hucreTermalStresOnerisi = useMemo(() => {
+    if (!seciliHucreDetay || !seciliSkor) return null;
+    return hucreTermalStresOnerisiBelirle(
+      seciliHucreDetay.tehlike,
+      seciliSkor.maruziyet,
+      seciliHucreDetay.yesil_alan_orani,
+      seciliHucreDetay.bina_yogunlugu,
+      agirliklar,
+      ayarlar.termal_stres_esikleri
+    );
+  }, [seciliHucreDetay, seciliSkor, agirliklar, ayarlar.termal_stres_esikleri]);
 
   const yesilSimSonuc = useMemo(() => {
     if (!seciliMahalle || !seciliSkor) return null;
@@ -265,6 +312,18 @@ export default function App() {
       ayarlar.simulasyon_bina_azaltma_katsayisi,
     );
   }, [seciliMahalle, seciliSkor, simYesil, agirliklar]);
+
+  // Izgara sim aktifken TUM alt modlarda (tek hucre secili VEYA hicbiri secili
+  // degilken butun izgaraya "en kotu once" dagitimi) panel riski izgaraKatmani.
+  // hucreOzellikleri'nden (yani haritada gorunen ayni simule edilmis hucre
+  // durumundan) hesaplanir - seciliHucreIndex burada ayrica kontrol edilmez,
+  // cunku izgaraKatmani zaten onu hesaba katarak hucreOzellikleri'ni uretir.
+  const hucreBazliSimSonuc = useMemo(() => {
+    if (!izgaraKatmani || !izgaraKatmani.simulasyonAktif || !seciliSkor) return null;
+    return hucreBazliMahalleSkoruHesapla(izgaraKatmani.hucreOzellikleri, seciliSkor.maruziyet, agirliklar);
+  }, [izgaraKatmani, seciliSkor, agirliklar]);
+
+  const efektifYesilSimSonuc = hucreBazliSimSonuc ?? yesilSimSonuc;
 
   const nufusSimSonuclari = useMemo(() => {
     if (seciliIndex < 0 || mahalleVerileri.length === 0) return null;
@@ -298,9 +357,9 @@ export default function App() {
   }, [nufusSimSonuclari, seciliAd]);
 
   const yesilSimYeniRank = useMemo(() => {
-    if (!yesilSimSonuc || !seciliAd || mevcutSkorlar.length === 0) return null;
-    return hesaplaSimuleRank(mevcutSkorlar, seciliAd, yesilSimSonuc.risk);
-  }, [mevcutSkorlar, seciliAd, yesilSimSonuc]);
+    if (!efektifYesilSimSonuc || !seciliAd || mevcutSkorlar.length === 0) return null;
+    return hesaplaSimuleRank(mevcutSkorlar, seciliAd, efektifYesilSimSonuc.risk);
+  }, [mevcutSkorlar, seciliAd, efektifYesilSimSonuc]);
 
   const butceSonuc = useMemo(() => {
     if (mevcutSkorlar.length === 0) return { secilenler: [] as number[], kapsananRiskYuzdesi: 0 };
@@ -388,9 +447,7 @@ export default function App() {
           <OncelikListesi
             siraliSkorlar={oncelikListesiSirali}
             tipolojiByAd={tipolojiByAd}
-            tipolojiEslemesi={
-              ayarlar.tipoloji_mudahale_eslemesi as Record<string, TipolojiEslemeKaydi>
-            }
+            tipolojiEslemesi={tipolojiEtiketEslemesi}
             tipolojiGuncelDegil={tipolojiGuncelDegil}
             renkEsikleri={ayarlar.renk_esikleri}
             seciliAd={seciliAd}
@@ -419,6 +476,8 @@ export default function App() {
                 izgaraYukleniyor={izgaraYukleniyor}
                 izgaraHata={izgaraHata}
                 seciliHucreDetay={seciliHucreDetay}
+                hucreYuzdelikDilimi={hucreYuzdelikDilimi}
+                hucreTermalStresOnerisi={hucreTermalStresOnerisi}
               />
               <Simulasyon
                 ayarlar={{
@@ -427,7 +486,7 @@ export default function App() {
                 }}
                 seciliAd={seciliAd}
                 seciliSkor={seciliSkor ? { risk: seciliSkor.risk } : null}
-                yesilSimSonuc={yesilSimSonuc}
+                yesilSimSonuc={efektifYesilSimSonuc}
                 simYesil={simYesil}
                 onSimYesilChange={setSimYesil}
                 nufusSimYeniRisk={nufusSimYeniRisk}

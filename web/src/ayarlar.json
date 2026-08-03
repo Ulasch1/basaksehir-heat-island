@@ -11,11 +11,15 @@
   },
   "kumeleme_kume_sayisi": 3,
   "projeksiyon_ufku_yil": 5,
-  "tipoloji_mudahale_eslemesi": {
-    "0": { "etiket": "Karma doku", "mudahale": "Sokak agaci yogunlastirma" },
-    "1": { "etiket": "Seyrek yapili", "mudahale": "Agaclandirma koridoru, uzun vadeli yatirim" },
-    "2": { "etiket": "Yogun yapili", "mudahale": "Cati bahcesi ve golgelik yapi, dikime alan sinirli" }
-  },
+  "tipoloji_mudahale_siralamasi": [
+    { "etiket": "Seyrek yapili", "mudahale": "Agaclandirma koridoru, uzun vadeli yatirim" },
+    { "etiket": "Karma doku", "mudahale": "Sokak agaci yogunlastirma" },
+    { "etiket": "Yogun yapili", "mudahale": "Cati bahcesi ve golgelik yapi, dikime alan sinirli" }
+  ],
   "yerlesim_zarfi_r_metre": 100,
-  "izgara_hucre_metre": 100
+  "izgara_hucre_metre": 100,
+  "termal_stres_esikleri": {
+    "tehlike": 0.6,
+    "maruziyet": 0.6
+  }
 }

@@ -287,7 +287,11 @@ export default function Harita({
             }}
           />
           {izgaraKatmani.simulasyonAktif && (
-            <span className="italic">(yeşil alan artışı simülasyonu uygulanıyor)</span>
+            <span className="italic">
+              {seciliHucreIndex !== null
+                ? '(sadece seçili hücreye uygulanıyor)'
+                : '(yeşil alan artışı simülasyonu uygulanıyor)'}
+            </span>
           )}
         </div>
       )}

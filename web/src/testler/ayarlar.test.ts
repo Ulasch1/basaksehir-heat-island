@@ -25,11 +25,25 @@ describe('ayarlar.json - renk_esikleri (REQ-F-09)', () => {
     expect(ayarlar.maruziyet_alt_siniri).toBe(0.1);
     expect(ayarlar.kumeleme_kume_sayisi).toBe(3);
     expect(ayarlar.projeksiyon_ufku_yil).toBe(5);
-    expect(ayarlar.tipoloji_mudahale_eslemesi).toEqual({
-      "0": { etiket: "Karma doku", mudahale: "Sokak agaci yogunlastirma" },
-      "1": { etiket: "Seyrek yapili", mudahale: "Agaclandirma koridoru, uzun vadeli yatirim" },
-      "2": { etiket: "Yogun yapili", mudahale: "Cati bahcesi ve golgelik yapi, dikime alan sinirli" },
-    });
+    expect(ayarlar.tipoloji_mudahale_siralamasi).toEqual([
+      { etiket: "Seyrek yapili", mudahale: "Agaclandirma koridoru, uzun vadeli yatirim" },
+      { etiket: "Karma doku", mudahale: "Sokak agaci yogunlastirma" },
+      { etiket: "Yogun yapili", mudahale: "Cati bahcesi ve golgelik yapi, dikime alan sinirli" },
+    ]);
     expect(ayarlar.yerlesim_zarfi_r_metre).toBe(100);
+    expect(ayarlar.izgara_hucre_metre).toBe(100);
+    expect(ayarlar.termal_stres_esikleri).toEqual({ tehlike: 0.6, maruziyet: 0.6 });
+  });
+});
+
+describe('ayarlar.json - termal_stres_esikleri', () => {
+  it('tehlike ve maruziyet esikleri sayisal olarak dolu olmali', () => {
+    expect(typeof ayarlar.termal_stres_esikleri.tehlike).toBe('number');
+    expect(typeof ayarlar.termal_stres_esikleri.maruziyet).toBe('number');
+  });
+
+  it('beklenen baslangic degerlerine esit olmali (0.6 / 0.6)', () => {
+    expect(ayarlar.termal_stres_esikleri.tehlike).toBeCloseTo(0.6, 5);
+    expect(ayarlar.termal_stres_esikleri.maruziyet).toBeCloseTo(0.6, 5);
   });
 });

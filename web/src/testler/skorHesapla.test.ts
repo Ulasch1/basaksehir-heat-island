@@ -10,9 +10,17 @@ import {
   oncelikCsvSatirlariOlustur,
   oncelikCsvMetniOlustur,
   izgaraGeoJsonOlustur,
+  hucreTermalStresOnerisiBelirle,
+  hucreBaskinBileseniBelirle,
+  hucreTehlikeYuzdelikDilimiHesapla,
+  hucreBazliMahalleSkoruHesapla,
+  tipolojiEtiketEslemesiTure,
+  type TermalStresEsikleri,
+  type BaskinBilesen,
 } from '../skorHesapla';
 import type { MahalleVeri, MahalleSkoru, SkorAyarlari } from '../skorHesapla';
 import type { TehlikeAgirliklari } from '../skor';
+import { hesaplaTehlike, hesaplaRisk } from '../skor';
 
 // Sabit ayar objesi (ayarlar.json ile ayni yapi)
 const VARSAYILAN_AYARLAR: SkorAyarlari = {
@@ -493,5 +501,216 @@ describe('izgaraGeoJsonOlustur', () => {
 
     const fcFalse = izgaraGeoJsonOlustur(hucreler, ozellikler, false);
     expect(fcFalse.features[0].properties?.simulasyon_aktif).toBe(false);
+  });
+});
+
+describe('hucreTermalStresOnerisiBelirle', () => {
+  const esikler: TermalStresEsikleri = { tehlike: 0.6, maruziyet: 0.6 };
+  const agirliklar: TehlikeAgirliklari = { yesilAlan: 0.5, binaYogunlugu: 0.5 };
+
+  it('tehlike ve maruziyet ikisi de esik ustundeyse mesaj doner', () => {
+    const sonuc = hucreTermalStresOnerisiBelirle(0.8, 0.9, 0.1, 0.95, agirliklar, esikler);
+    expect(sonuc).not.toBeNull();
+    expect(sonuc).toContain('Yüksek nüfus yoğunluğu ısı stresini artırıyor');
+  });
+
+  it('sadece tehlike esik ustunde, maruziyet altindaysa null doner', () => {
+    expect(hucreTermalStresOnerisiBelirle(0.9, 0.3, 0.1, 0.95, agirliklar, esikler)).toBeNull();
+  });
+
+  it('sadece maruziyet esik ustunde, tehlike altindaysa null doner', () => {
+    expect(hucreTermalStresOnerisiBelirle(0.3, 0.9, 0.1, 0.95, agirliklar, esikler)).toBeNull();
+  });
+
+  it('ikisi de esik altindaysa null doner', () => {
+    expect(hucreTermalStresOnerisiBelirle(0.2, 0.2, 0.1, 0.95, agirliklar, esikler)).toBeNull();
+  });
+
+  it('ikisi de tam esige esitse (sinir durumu) mesaj doner (>= kullanildigi icin)', () => {
+    const sonuc = hucreTermalStresOnerisiBelirle(0.6, 0.6, 0.1, 0.95, agirliklar, esikler);
+    expect(sonuc).not.toBeNull();
+  });
+
+  it('bina yogunlugu baskin oldugunda golgelendirme onerisi doner', () => {
+    const sonuc = hucreTermalStresOnerisiBelirle(0.8, 0.9, 0.1, 0.95, agirliklar, esikler);
+    expect(sonuc).toContain('gölgelendirme yapıları');
+  });
+
+  it('yesil alan eksikligi baskin oldugunda aktif agaclandirma onerisi doner', () => {
+    const sonuc = hucreTermalStresOnerisiBelirle(0.8, 0.9, 0.05, 0.3, agirliklar, esikler);
+    expect(sonuc).toContain('aktif ağaçlandırma');
+  });
+});
+
+describe('hucreBaskinBileseniBelirle', () => {
+  const agirliklar: TehlikeAgirliklari = { yesilAlan: 0.5, binaYogunlugu: 0.5 };
+
+  it("bina yoğunluğu baskınsa 'bina_yogunlugu' döner", () => {
+    expect(hucreBaskinBileseniBelirle(0.1, 0.95, agirliklar)).toBe('bina_yogunlugu');
+  });
+
+  it("yeşil alan eksikliği baskınsa 'yesil_alan_eksikligi' döner", () => {
+    expect(hucreBaskinBileseniBelirle(0.05, 0.3, agirliklar)).toBe('yesil_alan_eksikligi');
+  });
+
+  it("eşitlik durumunda 'yesil_alan_eksikligi' döner (varsayılan)", () => {
+    expect(hucreBaskinBileseniBelirle(0.4, 0.6, agirliklar)).toBe('yesil_alan_eksikligi');
+  });
+});
+
+describe('hucreTehlikeYuzdelikDilimiHesapla', () => {
+  it('boş dizi için null döner', () => {
+    expect(hucreTehlikeYuzdelikDilimiHesapla(0.5, [])).toBeNull();
+  });
+
+  it('tek elemanlı dizide 100 döner', () => {
+    expect(hucreTehlikeYuzdelikDilimiHesapla(0.5, [0.5])).toBe(100);
+  });
+
+  it('farklı değerli dizide doğru yüzdeyi hesaplar', () => {
+    const tum = [0.9, 0.7, 0.5, 0.3, 0.1];
+    const sonuc = hucreTehlikeYuzdelikDilimiHesapla(0.7, tum);
+    // 0.9 ve 0.7 >= 0.7 → 2 eleman, toplam 5 → %40
+    expect(sonuc).toBe(40);
+  });
+
+  it('tüm değerler eşitse (hepsi >=) 100 döner', () => {
+    const tum = [0.5, 0.5, 0.5, 0.5];
+    expect(hucreTehlikeYuzdelikDilimiHesapla(0.5, tum)).toBe(100);
+  });
+});
+
+describe('hucreBazliMahalleSkoruHesapla', () => {
+  const agirliklar: TehlikeAgirliklari = { yesilAlan: 0.5, binaYogunlugu: 0.5 };
+
+  it('boş dizi → null', () => {
+    expect(hucreBazliMahalleSkoruHesapla([], 0.7, agirliklar)).toBeNull();
+  });
+
+  it('tek hücreli dizi için tehlike ve risk doğru hesaplanır', () => {
+    const hucreler = [{ yesil_alan_orani: 0.3, bina_yogunlugu: 0.6 }];
+    const maruziyet = 0.7;
+    const sonuc = hucreBazliMahalleSkoruHesapla(hucreler, maruziyet, agirliklar)!;
+    expect(sonuc).not.toBeNull();
+    const beklenenTehlike = hesaplaTehlike(0.3, 0.6, agirliklar);
+    expect(sonuc.tehlike).toBeCloseTo(beklenenTehlike, 5);
+    const beklenenRisk = hesaplaRisk(beklenenTehlike, maruziyet);
+    expect(sonuc.risk).toBeCloseTo(beklenenRisk, 5);
+    expect(sonuc.maruziyet).toBeCloseTo(maruziyet, 5);
+  });
+
+  it('birden fazla hücreli dizide ortalama kullanılır', () => {
+    const hucreler = [
+      { yesil_alan_orani: 0.2, bina_yogunlugu: 0.8 },
+      { yesil_alan_orani: 0.4, bina_yogunlugu: 0.6 },
+      { yesil_alan_orani: 0.6, bina_yogunlugu: 0.4 },
+    ];
+    const maruziyet = 0.9;
+    const ortYesil = (0.2 + 0.4 + 0.6) / 3; // 0.4
+    const ortBina = (0.8 + 0.6 + 0.4) / 3; // 0.6
+    const beklenenTehlike = hesaplaTehlike(ortYesil, ortBina, agirliklar);
+    const beklenenRisk = hesaplaRisk(beklenenTehlike, maruziyet);
+    const sonuc = hucreBazliMahalleSkoruHesapla(hucreler, maruziyet, agirliklar)!;
+    expect(sonuc).not.toBeNull();
+    expect(sonuc.tehlike).toBeCloseTo(beklenenTehlike, 5);
+    expect(sonuc.risk).toBeCloseTo(beklenenRisk, 5);
+    expect(sonuc.maruziyet).toBeCloseTo(maruziyet, 5);
+  });
+});
+
+describe('tipolojiEtiketEslemesiTure', () => {
+  const siralama = [
+    { etiket: 'Seyrek yapili', mudahale: 'Agaclandirma' },
+    { etiket: 'Karma doku', mudahale: 'Sokak agaci' },
+    { etiket: 'Yogun yapili', mudahale: 'Cati bahcesi' },
+  ];
+
+  it('AI index sirasi TERS geldiginde bile en dusuk yogunluklu grup her zaman ilk etiketi alir (kirilganlik regresyonu)', () => {
+    // Kasitli olarak "yanlis" bir index atamasi: index 2 = en dusuk yogunluk,
+    // index 0 = en yuksek yogunluk. Eski (statik, index-keyed) tasarimda bu
+    // durum index 0'a otomatik olarak "Seyrek yapili" derdi - bu YANLIS olurdu,
+    // cunku index 0'daki mahalleler aslinda EN YOGUN olanlar.
+    const tipolojiSonuclari = [
+      { ad: 'A', tipoloji: 0 }, // yogun
+      { ad: 'B', tipoloji: 0 },
+      { ad: 'C', tipoloji: 1 }, // orta
+      { ad: 'D', tipoloji: 1 },
+      { ad: 'E', tipoloji: 2 }, // seyrek
+      { ad: 'F', tipoloji: 2 },
+    ];
+    const mahalleVerileri = [
+      { ad: 'A', binaYogunlugu: 0.9 },
+      { ad: 'B', binaYogunlugu: 0.8 },
+      { ad: 'C', binaYogunlugu: 0.5 },
+      { ad: 'D', binaYogunlugu: 0.5 },
+      { ad: 'E', binaYogunlugu: 0.1 },
+      { ad: 'F', binaYogunlugu: 0.2 },
+    ];
+
+    const esleme = tipolojiEtiketEslemesiTure(tipolojiSonuclari, mahalleVerileri, siralama);
+
+    expect(esleme['2'].etiket).toBe('Seyrek yapili');
+    expect(esleme['1'].etiket).toBe('Karma doku');
+    expect(esleme['0'].etiket).toBe('Yogun yapili');
+  });
+
+  it('index sirasi "dogru" (0=seyrek, 2=yogun) geldiginde de dogru sonuc verir', () => {
+    const tipolojiSonuclari = [
+      { ad: 'A', tipoloji: 0 }, // seyrek
+      { ad: 'B', tipoloji: 1 }, // orta
+      { ad: 'C', tipoloji: 2 }, // yogun
+    ];
+    const mahalleVerileri = [
+      { ad: 'A', binaYogunlugu: 0.1 },
+      { ad: 'B', binaYogunlugu: 0.5 },
+      { ad: 'C', binaYogunlugu: 0.9 },
+    ];
+
+    const esleme = tipolojiEtiketEslemesiTure(tipolojiSonuclari, mahalleVerileri, siralama);
+
+    expect(esleme['0'].etiket).toBe('Seyrek yapili');
+    expect(esleme['1'].etiket).toBe('Karma doku');
+    expect(esleme['2'].etiket).toBe('Yogun yapili');
+  });
+
+  it('bos tipoloji sonuclari -> bos esleme', () => {
+    const esleme = tipolojiEtiketEslemesiTure([], [{ ad: 'A', binaYogunlugu: 0.5 }], siralama);
+    expect(esleme).toEqual({});
+  });
+
+  it('mahalleVerileri icinde bulunamayan ad, o mahallenin katkisi olmadan atlanir', () => {
+    const tipolojiSonuclari = [
+      { ad: 'Bilinmeyen', tipoloji: 0 },
+      { ad: 'A', tipoloji: 1 },
+    ];
+    const mahalleVerileri = [{ ad: 'A', binaYogunlugu: 0.5 }];
+
+    const esleme = tipolojiEtiketEslemesiTure(tipolojiSonuclari, mahalleVerileri, siralama);
+
+    // index 0 icin hic mahalle verisi bulunamadi (sadece 'Bilinmeyen' vardi, o
+    // atlandi), bu yuzden index 0 esleme almamali; index 1 tek basina kalir ve
+    // siralamadaki EN DUSUK sirayi (0. index -> 'Seyrek yapili') alir.
+    expect(esleme['0']).toBeUndefined();
+    expect(esleme['1'].etiket).toBe('Seyrek yapili');
+  });
+
+  it('gozlenen index sayisi siralama uzunlugundan fazlaysa fazla index esleme almaz', () => {
+    const tipolojiSonuclari = [
+      { ad: 'A', tipoloji: 0 },
+      { ad: 'B', tipoloji: 1 },
+      { ad: 'C', tipoloji: 2 },
+      { ad: 'D', tipoloji: 3 },
+    ];
+    const mahalleVerileri = [
+      { ad: 'A', binaYogunlugu: 0.1 },
+      { ad: 'B', binaYogunlugu: 0.4 },
+      { ad: 'C', binaYogunlugu: 0.7 },
+      { ad: 'D', binaYogunlugu: 0.9 },
+    ];
+
+    const esleme = tipolojiEtiketEslemesiTure(tipolojiSonuclari, mahalleVerileri, siralama);
+
+    expect(Object.keys(esleme).sort()).toEqual(['0', '1', '2']);
+    expect(esleme['3']).toBeUndefined();
   });
 });
