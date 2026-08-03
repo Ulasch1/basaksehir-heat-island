@@ -6,9 +6,8 @@ it needs, and **when** it will need it, from open data.
 Built for Başakşehir municipality (İstanbul) as an internship project, with full ISO/IEC
 330xx (SPICE) process documentation.
 
-> **Status.** Design is complete and baselined. The scoring module is implemented and
-> tested; the data pipeline, AI service and interface are not built yet. See
-> [Current state](#current-state).
+> **Status.** Phase 1 is complete: the data pipeline, scoring module, AI service and
+> interface are all implemented and tested. See [Current state](#current-state).
 
 ---
 
@@ -41,6 +40,14 @@ The most useful thing the model produces is this: **the most structurally unfavo
 neighborhood is not necessarily the highest priority one**, once population distribution is
 taken into account.
 
+**Both density ratios are computed against a settlement envelope, not the raw neighborhood
+boundary.** Buffering and merging building footprints (radius configurable, default 100m) and
+clipping to the neighborhood boundary excludes the empty land that some neighborhoods carry.
+Without this, a neighborhood that is mostly vacant land with a small dense core (Başak: 24.5
+km², 71,065 people, 2.3% built-up) reports a green cover ratio of 85.5% and a hazard score of
+0.084, which understates the risk to the people who actually live there by diluting the
+built-up core with land nobody occupies.
+
 ## The AI layer
 
 The risk score answers "how urgent is this neighborhood". Two models answer what it cannot:
@@ -63,6 +70,19 @@ changes such as a new housing development coming online. One neighborhood also h
 population series than the rest, and it happens to be the same outlier that anchors the
 bottom of the exposure scale. Its projection is treated separately rather than averaged in
 as if it were as well-supported as the others.
+
+## The interface
+
+| Capability | What it does |
+|---|---|
+| Risk map | Neighborhoods colored on a fixed 3-bucket scale (low/medium/high), thresholds read from configuration, not hard-coded |
+| Priority list | Sorted by risk by default; can be re-sorted by green-cover deficit or building density for department-specific views. Re-sorting only changes the list's display order, the map, budget calculation and simulations always stay risk-based |
+| Detail panel | Breaks a neighborhood's score down into hazard, exposure and their sub-components |
+| Intra-neighborhood heat grid | ~100m cells inside a neighborhood's settlement envelope, colored on a separate, neighborhood-local scale, for finding which corner of a neighborhood needs the intervention, not just which neighborhood |
+| Three simulations | Green cover increase (with a modeled building-density offset), population growth (rescales exposure for every neighborhood, not just the one edited), and budget-constrained selection (top N neighborhoods by risk, with % of total risk covered) |
+| Neighborhood search | Type-ahead filter that jumps the map, list and detail panel to a match |
+| Export | Priority list as CSV, an open heat grid as GeoJSON (flagged when a simulation is active) |
+| Degraded-mode indicator | Typology and projection values are marked stale, with the timestamp and service version they came from, whenever the AI service is unreachable |
 
 ## Architecture
 
@@ -94,7 +114,7 @@ date, this was a precondition for adding the AI layer at all.
 |---|---|
 | Data preparation | Python, `requests`, `shapely` |
 | AI service | Python, `scikit-learn` |
-| Interface | React, TypeScript, Vite, Tailwind |
+| Interface | React, TypeScript, Vite, Tailwind, Framer Motion |
 | Map and charts | Leaflet, Recharts |
 | Deployment | Static build; AI service deployed separately |
 
@@ -102,14 +122,34 @@ date, this was a precondition for adding the AI layer at all.
 
 | Component | State |
 |---|---|
-| Scoring module | **Implemented.** Pure TypeScript, no DOM, network or file access. 15 unit tests covering hazard, exposure scaling, risk, simulation and budget-constrained selection |
-| Data preparation script | Not started. Data sources verified, see below |
-| AI service | Not started |
-| Interface (map, priority list, simulation) | **Implemented.** Map, priority list, detail panel and simulation panel are built, plus an intra-neighborhood heat grid, CSV/GeoJSON export, and department-focused sort modes |
+| Data preparation script | **Implemented.** Pulls boundaries, green cover and buildings from Overpass, joins population by TurkStat code, computes the settlement envelope and the intra-neighborhood heat grid, embeds a cached AI snapshot for degraded mode |
+| Scoring module | **Implemented.** Pure TypeScript, no DOM, network or file access. Covers hazard, exposure scaling, risk, all three simulations and budget-constrained selection |
+| AI service | **Implemented.** Flask HTTP service, k-means typology clustering and linear-trend population projection, deployed independently of the interface |
+| Interface | **Implemented.** Map, priority list, detail panel, simulation panel, intra-neighborhood heat grid, neighborhood search, CSV/GeoJSON export and department-focused sort modes |
 | IoT sensor network | Phase 2, deliberately not implemented |
 
+## Quick start
+
+Two processes run side by side: the AI service and the web interface. The interface still
+works with the AI service off, it just falls back to the cached snapshot.
+
 ```bash
-cd web && npm install && npm test
+cd servis && pip install -r requirements.txt && python uygulama.py
+```
+
+```bash
+cd web && npm install && npm run dev
+```
+
+The interface opens at `http://localhost:5173` and expects the AI service at
+`http://localhost:8000`.
+
+To run the test suites:
+
+```bash
+cd web && npm test
+cd servis && python -m pytest
+cd veri && python -m pytest
 ```
 
 The scoring module is deliberately the first thing built and the only place the formulas
@@ -132,13 +172,13 @@ raw need       requirement       architecture      test case
 | Project definition | Project initiation | Scope, phase split, model rationale |
 | Requirements elicitation | ENG.1 | 10 raw needs, approval gate, privacy assessment |
 | Baseline agreement | ENG.1 BP4 | Scope agreement recorded before implementation |
-| Requirements analysis | ENG.4 | 31 requirements, acceptance criteria, actors and use cases |
-| Architecture design | ENG.5 | 10 components, layer model, interface contracts |
+| Requirements analysis | ENG.4 | 36 requirements, acceptance criteria, actors and use cases |
+| Architecture design | ENG.5 | 12 components, layer model, interface contracts |
 | Project management | MAN.3, MAN.5 | Plan, ownership, 13-item risk register |
-| Test plan | ENG.7, ENG.8 | 34 test cases, traceability matrix |
+| Test plan | ENG.7, ENG.8 | 40 test cases, traceability matrix |
 | Configuration management | SUP.8, ENG.6, SPL.2 | Version discipline, coding standard, release package |
 
-**Traceability matrix: 31/31.** Every requirement maps to at least one test case. A gap
+**Traceability matrix: 36/36.** Every requirement maps to at least one test case. A gap
 anywhere in the chain means one of two things: a requirement nobody tests, or a feature
 nobody asked for.
 
