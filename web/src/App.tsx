@@ -58,6 +58,8 @@ export default function App() {
   const [izgaraHata, setIzgaraHata] = useState<string | null>(null);
   const [seciliHucreIndex, setSeciliHucreIndex] = useState<number | null>(null);
   const [baglamVeri, setBaglamVeri] = useState<BaglamVerisi | null>(null);
+  const [senaryoModuAktif, setSenaryoModuAktif] = useState(false);
+  const [simHedef, setSimHedef] = useState<'mahalle' | 'hucre'>('mahalle');
 
   useEffect(() => {
     let iptalEdildi = false;
@@ -117,10 +119,6 @@ export default function App() {
       iptalEdildi = true;
     };
   }, [izgaraGoster, seciliAd]);
-
-  useEffect(() => {
-    setSeciliHucreIndex(null);
-  }, [seciliAd, izgaraGoster]);
 
   useEffect(() => {
     let iptalEdildi = false;
@@ -259,7 +257,7 @@ export default function App() {
     if (!izgaraGoster || !izgaraVeri || izgaraVeri.ad !== seciliAd || izgaraVeri.hucreler.length === 0) {
       return null;
     }
-    const simulasyonAktif = simYesil > 0;
+    const simulasyonAktif = senaryoModuAktif && simYesil > 0;
     const baseline = hesaplaHucreTehlikeleri(izgaraVeri.hucreler, agirliklar);
     const baselineOzellikleri = izgaraVeri.hucreler.map((h, i) => ({
       yesil_alan_orani: h.yesil_alan_orani,
@@ -268,10 +266,11 @@ export default function App() {
     }));
 
     let hucreOzellikleri: { yesil_alan_orani: number; bina_yogunlugu: number; tehlike: number }[];
+    let hedefUygulamaTuru: 'hucre' | 'mahalle' = 'mahalle';
 
     if (!simulasyonAktif) {
       hucreOzellikleri = baselineOzellikleri;
-    } else if (seciliHucreIndex !== null && izgaraVeri.hucreler[seciliHucreIndex]) {
+    } else if (simHedef === 'hucre' && seciliHucreIndex !== null && izgaraVeri.hucreler[seciliHucreIndex]) {
       hucreOzellikleri = [...baselineOzellikleri];
       const tekSonuc = simuleHucreYesillestirme(
         [izgaraVeri.hucreler[seciliHucreIndex]],
@@ -280,6 +279,7 @@ export default function App() {
         agirliklar
       );
       hucreOzellikleri[seciliHucreIndex] = tekSonuc[0];
+      hedefUygulamaTuru = 'hucre';
     } else {
       hucreOzellikleri = simuleHucreYesillestirme(
         izgaraVeri.hucreler,
@@ -287,11 +287,12 @@ export default function App() {
         ayarlar.simulasyon_bina_azaltma_katsayisi,
         agirliklar
       );
+      hedefUygulamaTuru = 'mahalle';
     }
 
     const tehlikeler = hucreOzellikleri.map((h) => h.tehlike);
-    return { ad: izgaraVeri.ad, hucreler: izgaraVeri.hucreler, hucreOzellikleri, tehlikeler, baselineTehlikeler: baseline, simulasyonAktif };
-  }, [izgaraGoster, izgaraVeri, seciliAd, agirliklar, simYesil, seciliHucreIndex]);
+    return { ad: izgaraVeri.ad, hucreler: izgaraVeri.hucreler, hucreOzellikleri, tehlikeler, baselineTehlikeler: baseline, simulasyonAktif, hedefUygulamaTuru };
+  }, [izgaraGoster, izgaraVeri, seciliAd, agirliklar, simYesil, seciliHucreIndex, senaryoModuAktif, simHedef]);
 
   const izgaraKesisenSiteler = useMemo(() => {
     if (!izgaraKatmani || !seciliMahalle || !baglamVeri) return null;
@@ -427,7 +428,36 @@ export default function App() {
     });
   }, [butceSonuc, mevcutSkorlar]);
 
-  const onSecim = (ad: string) => setSeciliAd(ad);
+  const onSenaryoModuChange = (aktif: boolean) => {
+    setSenaryoModuAktif(aktif);
+    if (!aktif) {
+      setSimYesil(0);
+      setSimNufusYuzde(0);
+      setSimHedef('mahalle');
+    }
+  };
+
+  const onIzgaraGosterChange = (goster: boolean) => {
+    setIzgaraGoster(goster);
+    if (!goster) {
+      setSeciliHucreIndex(null);
+      setSimHedef('mahalle');
+    }
+  };
+
+  const onSecim = (ad: string) => {
+    setSeciliAd((mevcut) => {
+      if (mevcut !== ad) {
+        setSenaryoModuAktif(false);
+        setSimYesil(0);
+        setSimNufusYuzde(0);
+        setSeciliHucreIndex(null);
+        setSimHedef('mahalle');
+      }
+      return ad;
+    });
+  };
+
   const onHucreSecim = (index: number) => setSeciliHucreIndex(index);
 
   if (hata) {
@@ -474,7 +504,7 @@ export default function App() {
           onHucreSecim={onHucreSecim}
           seciliHucreIndex={seciliHucreIndex}
           butceSecilenAdlari={butceSecilenAdlari}
-          simulasyonOnizlemeAktif={simYesil > 0 || simNufusYuzde !== 0}
+          simulasyonOnizlemeAktif={senaryoModuAktif && (simYesil > 0 || simNufusYuzde !== 0)}
           izgaraKatmani={izgaraKatmani}
           baglamVeri={baglamVeri}
           kesisenSiteler={izgaraKesisenSiteler}
@@ -509,7 +539,7 @@ export default function App() {
                 projeksiyonRiski={seciliProjeksiyonRiski}
                 projeksiyonGuncelDegil={projeksiyonGuncelDegil}
                 izgaraGoster={izgaraGoster}
-                onIzgaraGosterChange={setIzgaraGoster}
+                onIzgaraGosterChange={onIzgaraGosterChange}
                 izgaraYukleniyor={izgaraYukleniyor}
                 izgaraHata={izgaraHata}
                 seciliHucreDetay={seciliHucreDetay}
@@ -518,6 +548,12 @@ export default function App() {
                 seciliHucreSiteAdi={seciliHucreSiteAdi}
               />
               <Simulasyon
+                senaryoModuAktif={senaryoModuAktif}
+                onSenaryoModuChange={onSenaryoModuChange}
+                izgaraGoster={izgaraGoster}
+                hucreSeciliMi={seciliHucreIndex !== null}
+                simHedef={simHedef}
+                onSimHedefChange={setSimHedef}
                 ayarlar={{
                   simulasyon_bina_azaltma_katsayisi:
                     ayarlar.simulasyon_bina_azaltma_katsayisi,

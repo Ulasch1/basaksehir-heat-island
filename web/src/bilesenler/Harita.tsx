@@ -36,6 +36,7 @@ interface HaritaProps {
     tehlikeler: number[];
     baselineTehlikeler: number[];
     simulasyonAktif: boolean;
+    hedefUygulamaTuru: 'hucre' | 'mahalle';
   } | null;
   baglamVeri: BaglamVerisi | null;
   kesisenSiteler: BaglamSite[] | null;
@@ -525,7 +526,7 @@ export default function Harita({
           />
           {izgaraKatmani.simulasyonAktif && (
             <span className="italic">
-              {seciliHucreIndex !== null
+              {izgaraKatmani.hedefUygulamaTuru === 'hucre'
                 ? '(sadece seçili hücreye uygulanıyor)'
                 : '(yeşil alan artışı simülasyonu uygulanıyor)'}
             </span>
