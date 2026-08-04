@@ -251,3 +251,85 @@ export function maruziyetYeniMahalleyleHesapla(
   const olceklenmis = olcekleMaruziyet(genisletilmis, altSinir);
   return olceklenmis[olceklenmis.length - 1];
 }
+
+export interface HedefTehlikeCozumSonucu {
+  /** hedefTehlike'ye ulasilabilir mi (clamp'ler nedeniyle imkansiz olabilir) */
+  mumkun: boolean;
+  /** yuzde puan cinsinden (simuleYesilAlan'in artisPuani parametresiyle AYNI birim),
+   * HAM/yuvarlanmamis. mumkun=false ise null. */
+  gerekliArtisPuani: number | null;
+}
+
+/**
+ * simuleYesilAlan'in CEBIRSEL TERSI. Verilen bir hedef tehlike skoruna ulasmak icin
+ * gereken MINIMUM yesil alan artis puanini (d) bulur; simuleYesilAlan'daki AYNI iki
+ * clamp'i (yeniYesil <= 1, yeniBina >= 0) ve AYNI katsayi baglantisini kullanir, yeni
+ * bir varsayim eklemez. tehlike(delta) parcali-dogrusal ve delta'da monoton azalandir
+ * (katsayi >= 0 varsayimiyla); bu fonksiyon kirilim noktalarini (yesil orani 1'e, bina
+ * yogunlugu 0'a doydugu delta degerlerini) bulup dogru segmentte lineer denklemi cozer.
+ *
+ * Mevcut (delta=0) tehlike zaten hedefTehlike'nin altinda/esitse mumkun=true,
+ * gerekliArtisPuani=0 doner (cagiran taraf bunu ayrica "zaten hedefte" olarak
+ * yorumlayabilir).
+ */
+export function hesaplaGerekliArtisPuani(
+  mahalle: { yesilAlanOrani: number; binaYogunlugu: number },
+  hedefTehlike: number,
+  katsayi: number,
+  agirliklar: TehlikeAgirliklari = { yesilAlan: 0.5, binaYogunlugu: 0.5 }
+): HedefTehlikeCozumSonucu {
+  const { yesilAlan: wYesil, binaYogunlugu: wBina } = agirliklar;
+  const payda = wYesil + wBina;
+  if (payda === 0) {
+    throw new Error('hesaplaGerekliArtisPuani: agirliklar toplami sifir olamaz');
+  }
+
+  const y0 = mahalle.yesilAlanOrani;
+  const b0 = mahalle.binaYogunlugu;
+
+  const tehlikeAtDelta = (delta: number): number => {
+    const yeniYesil = Math.min(Math.max(y0 + delta, 0), 1);
+    const yeniBina = Math.min(Math.max(b0 - delta * katsayi, 0), 1);
+    return hesaplaTehlike(yeniYesil, yeniBina, agirliklar);
+  };
+
+  const baselineTehlike = tehlikeAtDelta(0);
+  if (baselineTehlike <= hedefTehlike) {
+    return { mumkun: true, gerekliArtisPuani: 0 };
+  }
+
+  // Kirilim noktalari: yesil orani 1'e, bina yogunlugu 0'a doydugu delta degerleri.
+  const bpYesil = Math.max(0, 1 - y0);
+  const bpBina = katsayi > 0 ? Math.max(0, b0 / katsayi) : Infinity;
+
+  const kirilimlar = [...new Set([0, bpYesil, bpBina].filter((d) => Number.isFinite(d)))].sort(
+    (a, b) => a - b
+  );
+
+  for (let i = 0; i < kirilimlar.length; i++) {
+    const dStart = kirilimlar[i];
+    const dEnd = i + 1 < kirilimlar.length ? kirilimlar[i + 1] : Infinity;
+    if (dEnd <= dStart) continue;
+
+    const tehlikeStart = tehlikeAtDelta(dStart);
+    if (tehlikeStart <= hedefTehlike) {
+      return { mumkun: true, gerekliArtisPuani: dStart * 100 };
+    }
+
+    const yesilAktif = dStart < bpYesil;
+    const binaAktif = dStart < bpBina;
+    const egim = -(wYesil * (yesilAktif ? 1 : 0) + wBina * katsayi * (binaAktif ? 1 : 0)) / payda;
+
+    if (egim === 0) {
+      continue;
+    }
+
+    const dCozum = dStart + (hedefTehlike - tehlikeStart) / egim;
+
+    if (dCozum <= dEnd + 1e-9) {
+      return { mumkun: true, gerekliArtisPuani: dCozum * 100 };
+    }
+  }
+
+  return { mumkun: false, gerekliArtisPuani: null };
+}

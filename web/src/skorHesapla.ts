@@ -7,7 +7,7 @@
  * - En yuksek tehlike ve en yuksek risk sahibi mahallelerin farkli olup olmadigini tespit eder.
  */
 
-import { hesaplaTehlike, olcekleMaruziyet, hesaplaRisk, simuleNufus, hesaplaGerekliYesilAlanOrani, maruziyetYeniMahalleyleHesapla } from './skor';
+import { hesaplaTehlike, olcekleMaruziyet, hesaplaRisk, simuleNufus, hesaplaGerekliYesilAlanOrani, maruziyetYeniMahalleyleHesapla, hesaplaGerekliArtisPuani } from './skor';
 import type { TehlikeAgirliklari, MahalleGirdi } from './skor';
 import type { MahalleSinir, BaglamSite } from './veriKaynagi';
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
@@ -719,4 +719,76 @@ export function hesaplaImarOnDegerlendirme(
   );
 
   return { projeMaruziyeti, hedefTehlike, mumkun, gerekliYesilAlanOrani };
+}
+
+export interface HedefRiskCozumSonucu {
+  /** mevcut (simulasyonsuz) risk zaten hedefRisk'in altinda/esit mi */
+  zatenAltinda: boolean;
+  /** hedefe (clamp'ler dahil) ulasilabilir mi */
+  mumkun: boolean;
+  /** yuzde puan, HAM/yuvarlanmamis. mumkun=false ise null. */
+  gerekliYesilArtisPuaniHam: number | null;
+  /** yuzde puan, 1 ondalige YUKARI yuvarlanmis (goruntuleme icin). mumkun=false ise null.
+   * Yukari yuvarlama hedefi HICBIR ZAMAN bozmaz: tehlike delta'da monoton azalandir,
+   * daha buyuk delta her zaman ayni veya daha dusuk tehlike/risk uretir. */
+  gerekliYesilArtisPuaniGosterim: number | null;
+  /** gerekliYesilArtisPuaniGosterim, yesil alan artisi slider'inin araligi (0..sliderMaxPuan,
+   * varsayilan 30) icinde mi. mumkun=false ise false. */
+  sliderAraligindaMi: boolean;
+}
+
+/**
+ * "Hedef risk cozucu" (ters simulasyon): secili mahalle icin verilen bir hedef RISK
+ * skoruna ulasmak amaciyla gereken minimum yesil alan artis puanini hesaplar.
+ * skor.ts'teki hesaplaGerekliArtisPuani'nin (tehlike seviyesinde calisan cebirsel ters
+ * cozum) RISK seviyesine sarmalayicisidir: hedefTehlike = hedefRisk / maruziyet
+ * (maruziyet bu senaryoda SABIT kabul edilir, tipki simuleYesilAlan'in maruziyeti
+ * degistirmemesi gibi).
+ */
+export function hesaplaHedefRiskCozumu(
+  mahalle: { yesilAlanOrani: number; binaYogunlugu: number },
+  maruziyet: number,
+  hedefRisk: number,
+  katsayi: number,
+  agirliklar: TehlikeAgirliklari,
+  sliderMaxPuan: number = 30
+): HedefRiskCozumSonucu {
+  if (maruziyet <= 0) {
+    throw new Error('hesaplaHedefRiskCozumu: maruziyet sifir veya negatif olamaz');
+  }
+
+  const hedefTehlike = hedefRisk / maruziyet;
+  const baselineTehlike = hesaplaTehlike(mahalle.yesilAlanOrani, mahalle.binaYogunlugu, agirliklar);
+
+  if (baselineTehlike <= hedefTehlike) {
+    return {
+      zatenAltinda: true,
+      mumkun: true,
+      gerekliYesilArtisPuaniHam: 0,
+      gerekliYesilArtisPuaniGosterim: 0,
+      sliderAraligindaMi: true,
+    };
+  }
+
+  const { mumkun, gerekliArtisPuani } = hesaplaGerekliArtisPuani(mahalle, hedefTehlike, katsayi, agirliklar);
+
+  if (!mumkun || gerekliArtisPuani === null) {
+    return {
+      zatenAltinda: false,
+      mumkun: false,
+      gerekliYesilArtisPuaniHam: null,
+      gerekliYesilArtisPuaniGosterim: null,
+      sliderAraligindaMi: false,
+    };
+  }
+
+  const gosterim = Math.ceil(gerekliArtisPuani * 10) / 10;
+
+  return {
+    zatenAltinda: false,
+    mumkun: true,
+    gerekliYesilArtisPuaniHam: gerekliArtisPuani,
+    gerekliYesilArtisPuaniGosterim: gosterim,
+    sliderAraligindaMi: gosterim <= sliderMaxPuan,
+  };
 }

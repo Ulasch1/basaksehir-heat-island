@@ -12,10 +12,16 @@ interface SimulasyonProps {
   birlesikSenaryoSonuc: { risk: number; rank: number | null } | null;
   simNufusYuzde: number;
   onSimNufusYuzdeChange: (v: number) => void;
-  simButce: number;
-  onSimButceChange: (v: number) => void;
-  butceKapsananRiskYuzdesi: number;
-  butceSecilenler: Array<{ ad: string; rank: number }>;
+  hedefRisk: number;
+  onHedefRiskChange: (v: number) => void;
+  hedefRiskSonuc: {
+    zatenAltinda: boolean;
+    mumkun: boolean;
+    gerekliYesilArtisPuaniHam: number | null;
+    gerekliYesilArtisPuaniGosterim: number | null;
+    sliderAraligindaMi: boolean;
+  } | null;
+  varsayilanHedefRisk: number;
   izgaraGoster: boolean;
   onIzgaraGosterChange: (deger: boolean) => void;
   hucreSeciliMi: boolean;
@@ -36,10 +42,10 @@ export default function Simulasyon({
   birlesikSenaryoSonuc,
   simNufusYuzde,
   onSimNufusYuzdeChange,
-  simButce,
-  onSimButceChange,
-  butceKapsananRiskYuzdesi,
-  butceSecilenler,
+  hedefRisk,
+  onHedefRiskChange,
+  hedefRiskSonuc,
+  varsayilanHedefRisk,
   izgaraGoster,
   onIzgaraGosterChange,
   hucreSeciliMi,
@@ -182,40 +188,55 @@ export default function Simulasyon({
         </button>
       </div>
 
-      {/* Bütçe kısıtı – her zaman gösterilir */}
       <div className="border-t border-contur pt-4">
-        <div className="flex justify-between text-xs mb-1">
-          <span>Bütçe kısıtı — kaç mahalleye müdahale edilebilir?</span>
-          <span className="font-mono text-muted">{simButce} mahalle</span>
-        </div>
+        <div className="text-xs mb-1">Hedef risk çözücü</div>
+        <label className="text-xs text-muted block mb-0.5">Hedef risk</label>
         <input
-          type="range"
-          min={1}
-          max={10}
-          step={1}
-          value={simButce}
-          onChange={(e) => onSimButceChange(Number(e.target.value))}
-          className="w-full accent-[oklch(0.6_0.14_150)]"
+          type="number"
+          min={0}
+          max={1}
+          step={0.01}
+          value={hedefRisk}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            if (!Number.isNaN(v)) onHedefRiskChange(v);
+          }}
+          className="w-full bg-page border border-contur rounded-md px-2 py-1 text-sm mb-1"
         />
+        <p className="text-[10px] text-muted mb-2">
+          Varsayılan değer, düşük risk sınırıdır ({varsayilanHedefRisk.toFixed(2)}).
+        </p>
 
-        <div className="text-[11px] text-muted mt-2 mb-2">
-          Toplam riskin{' '}
-          <span className="text-accent font-medium">
-            %{butceKapsananRiskYuzdesi.toFixed(0)}
-          </span>
-          'i kapsanıyor:
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {butceSecilenler.map((b) => (
-            <span
-              key={b.ad}
-              className="text-[11px] bg-panel border border-contur px-2 py-1 rounded-md"
-            >
-              {b.rank} {b.ad}
-            </span>
-          ))}
-        </div>
+        {hedefRiskSonuc && (
+          hedefRiskSonuc.zatenAltinda ? (
+            <div className="bg-risk-dusuk/10 border border-risk-dusuk/40 text-ink text-xs rounded-lg px-3 py-2">
+              Bu mahalle hedef riskin zaten altında.
+            </div>
+          ) : hedefRiskSonuc.mumkun ? (
+            <div className="bg-risk-dusuk/10 border border-risk-dusuk/40 text-ink text-xs rounded-lg px-3 py-2">
+              <p>
+                Gereken yeşil alan artışı:{' '}
+                <span className="font-mono font-semibold">
+                  +{hedefRiskSonuc.gerekliYesilArtisPuaniGosterim} puan
+                </span>
+              </p>
+              {hedefRiskSonuc.sliderAraligindaMi ? (
+                <button
+                  onClick={() => onSimYesilChange(Math.ceil(hedefRiskSonuc.gerekliYesilArtisPuaniGosterim!))}
+                  className="mt-2 border border-contur text-muted text-[11px] px-3 py-1 rounded-md hover:bg-panel"
+                >
+                  Slider'a uygula
+                </button>
+              ) : (
+                <p className="text-[11px] text-muted mt-1">Slider aralığının (0-30) dışında.</p>
+              )}
+            </div>
+          ) : (
+            <div className="bg-risk-yuksek/10 border border-risk-yuksek/40 text-ink text-xs rounded-lg px-3 py-2">
+              Bu hedefe yalnızca yeşil alan artışıyla ulaşılamıyor.
+            </div>
+          )
+        )}
       </div>
     </div>
   );

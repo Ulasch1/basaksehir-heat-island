@@ -12,7 +12,6 @@ interface SimDurumu {
   simYesil: number;
   simNufusYuzde: number;
   simHedef: 'mahalle' | 'hucre';
-  simButce: number;
   seciliHucreIndex: number | null;
 }
 
@@ -30,18 +29,17 @@ function mahalleSec(durum: SimDurumu): SimDurumu {
 }
 
 describe('aktifSekme durum gecisleri (REPLIKASYON)', () => {
-  it('Senaryo -> Inceleme gecisinde sim state sifirlanir, simButce sifirlanmaz', () => {
-    const durum: SimDurumu = { aktifSekme: 'senaryo', simYesil: 20, simNufusYuzde: 30, simHedef: 'hucre', simButce: 7, seciliHucreIndex: 3 };
+  it('Senaryo -> Inceleme gecisinde sim state sifirlanir', () => {
+    const durum: SimDurumu = { aktifSekme: 'senaryo', simYesil: 20, simNufusYuzde: 30, simHedef: 'hucre', seciliHucreIndex: 3 };
     const sonuc = aktifSekmeDegistir(durum, 'inceleme');
     expect(sonuc.aktifSekme).toBe('inceleme');
     expect(sonuc.simYesil).toBe(0);
     expect(sonuc.simNufusYuzde).toBe(0);
     expect(sonuc.simHedef).toBe('mahalle');
-    expect(sonuc.simButce).toBe(7); // butce sifirlanmaz
   });
 
   it('Inceleme -> Senaryo gecisinde hicbir sim state sifirlanmaz', () => {
-    const durum: SimDurumu = { aktifSekme: 'inceleme', simYesil: 20, simNufusYuzde: 30, simHedef: 'hucre', simButce: 7, seciliHucreIndex: 3 };
+    const durum: SimDurumu = { aktifSekme: 'inceleme', simYesil: 20, simNufusYuzde: 30, simHedef: 'hucre', seciliHucreIndex: 3 };
     const sonuc = aktifSekmeDegistir(durum, 'senaryo');
     expect(sonuc.aktifSekme).toBe('senaryo');
     expect(sonuc.simYesil).toBe(20);
@@ -51,7 +49,7 @@ describe('aktifSekme durum gecisleri (REPLIKASYON)', () => {
   });
 
   it('senaryo turetmesi (senaryoAktif) dogrudan aktifSekmeye bagli', () => {
-    const inceleme: SimDurumu = { aktifSekme: 'inceleme', simYesil: 20, simNufusYuzde: 0, simHedef: 'mahalle', simButce: 3, seciliHucreIndex: null };
+    const inceleme: SimDurumu = { aktifSekme: 'inceleme', simYesil: 20, simNufusYuzde: 0, simHedef: 'mahalle', seciliHucreIndex: null };
     const senaryo: SimDurumu = { ...inceleme, aktifSekme: 'senaryo' };
     const senaryoAktifTure = (d: SimDurumu) => d.aktifSekme === 'senaryo';
     expect(senaryoAktifTure(inceleme)).toBe(false);
@@ -59,7 +57,7 @@ describe('aktifSekme durum gecisleri (REPLIKASYON)', () => {
   });
 
   it('mahalle degisiminde sim state sifirlanir ama aktifSekme degismez (Senaryo sekmesindeyken)', () => {
-    const durum: SimDurumu = { aktifSekme: 'senaryo', simYesil: 15, simNufusYuzde: 25, simHedef: 'hucre', simButce: 5, seciliHucreIndex: 2 };
+    const durum: SimDurumu = { aktifSekme: 'senaryo', simYesil: 15, simNufusYuzde: 25, simHedef: 'hucre', seciliHucreIndex: 2 };
     const sonuc = mahalleSec(durum);
     expect(sonuc.aktifSekme).toBe('senaryo'); // sekme korunur
     expect(sonuc.simYesil).toBe(0);
@@ -69,7 +67,7 @@ describe('aktifSekme durum gecisleri (REPLIKASYON)', () => {
   });
 
   it('mahalle degisiminde Inceleme sekmesindeyken de sekme degismez', () => {
-    const durum: SimDurumu = { aktifSekme: 'inceleme', simYesil: 0, simNufusYuzde: 0, simHedef: 'mahalle', simButce: 5, seciliHucreIndex: null };
+    const durum: SimDurumu = { aktifSekme: 'inceleme', simYesil: 0, simNufusYuzde: 0, simHedef: 'mahalle', seciliHucreIndex: null };
     const sonuc = mahalleSec(durum);
     expect(sonuc.aktifSekme).toBe('inceleme');
   });

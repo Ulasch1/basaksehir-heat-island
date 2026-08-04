@@ -19,6 +19,7 @@ import {
   type TermalStresEsikleri,
   type BaskinBilesen,
   type ImarOnDegerlendirmeSonucu,
+  hesaplaHedefRiskCozumu,
   noktaHalkaIcindeMi,
   noktaTekPoligondaMi,
   noktaSinirIcindeMi,
@@ -1023,5 +1024,89 @@ describe('hesaplaBirlesikSenaryoSonucu', () => {
   it('seciliAd nufusSimSonuclari icinde yoksa null doner', () => {
     const nufusSonuclari = simuleNufus(mahalleGirdiListesi(), 0, 0.2, agirliklar, 0.1);
     expect(hesaplaBirlesikSenaryoSonucu(0.5, nufusSonuclari, 'YokMahalle')).toBeNull();
+  });
+});
+
+describe('hesaplaHedefRiskCozumu', () => {
+  const agirliklar: TehlikeAgirliklari = { yesilAlan: 0.5, binaYogunlugu: 0.5 };
+
+  it('tutarlilik testi: yesil 0.2, bina 0.6, maruziyet 0.8, hedefRisk 0.3, katsayi 0.5, ham puan ~43.333, ileri model risk <=0.3', () => {
+    const sonuc = hesaplaHedefRiskCozumu(
+      { yesilAlanOrani: 0.2, binaYogunlugu: 0.6 },
+      0.8,
+      0.3,
+      0.5,
+      agirliklar
+    );
+    expect(sonuc.zatenAltinda).toBe(false);
+    expect(sonuc.mumkun).toBe(true);
+    expect(sonuc.gerekliYesilArtisPuaniHam).toBeCloseTo(43.333, 2);
+
+    const sim = simuleYesilAlan(
+      { ad: 'Test', yesilAlanOrani: 0.2, binaYogunlugu: 0.6, maruziyet: 0.8 },
+      sonuc.gerekliYesilArtisPuaniHam!,
+      0.5
+    );
+    expect(sim.risk).toBeLessThanOrEqual(0.3 + 1e-9);
+  });
+
+  it('yuvarlama hedefi bozmaz: gosterim 43.4, hamdan buyuk veya esit, ileri model risk < 0.3', () => {
+    const sonuc = hesaplaHedefRiskCozumu(
+      { yesilAlanOrani: 0.2, binaYogunlugu: 0.6 },
+      0.8,
+      0.3,
+      0.5,
+      agirliklar
+    );
+    expect(sonuc.gerekliYesilArtisPuaniGosterim).toBeCloseTo(43.4, 5);
+    expect(sonuc.gerekliYesilArtisPuaniGosterim!).toBeGreaterThanOrEqual(sonuc.gerekliYesilArtisPuaniHam!);
+
+    const sim = simuleYesilAlan(
+      { ad: 'Test', yesilAlanOrani: 0.2, binaYogunlugu: 0.6, maruziyet: 0.8 },
+      sonuc.gerekliYesilArtisPuaniGosterim!,
+      0.5
+    );
+    expect(sim.risk).toBeLessThan(0.3);
+  });
+
+  it('zaten altinda: yesil 0.8, bina 0.2, maruziyet 1, hedefRisk 0.5 -> zatenAltinda true, puan 0', () => {
+    const sonuc = hesaplaHedefRiskCozumu(
+      { yesilAlanOrani: 0.8, binaYogunlugu: 0.2 },
+      1,
+      0.5,
+      0.5,
+      agirliklar
+    );
+    expect(sonuc.zatenAltinda).toBe(true);
+    expect(sonuc.mumkun).toBe(true);
+    expect(sonuc.gerekliYesilArtisPuaniHam).toBe(0);
+  });
+
+  it('ulasilamaz: yesil 0.9, bina 0.8, maruziyet 1, hedefRisk 0.2, katsayi 0 -> mumkun false, tum puanlar null', () => {
+    const sonuc = hesaplaHedefRiskCozumu(
+      { yesilAlanOrani: 0.9, binaYogunlugu: 0.8 },
+      1,
+      0.2,
+      0,
+      agirliklar
+    );
+    expect(sonuc.mumkun).toBe(false);
+    expect(sonuc.gerekliYesilArtisPuaniHam).toBeNull();
+    expect(sonuc.gerekliYesilArtisPuaniGosterim).toBeNull();
+    expect(sonuc.sliderAraligindaMi).toBe(false);
+  });
+
+  it('slider araligi disinda: yesil 0.1, bina 0.9, maruziyet 1, hedefRisk 0.01, katsayi 0.5 -> mumkun, ham ~176, sliderAraligindaMi false', () => {
+    const sonuc = hesaplaHedefRiskCozumu(
+      { yesilAlanOrani: 0.1, binaYogunlugu: 0.9 },
+      1,
+      0.01,
+      0.5,
+      agirliklar
+    );
+    expect(sonuc.mumkun).toBe(true);
+    expect(sonuc.gerekliYesilArtisPuaniHam).toBeCloseTo(176, 0);
+    expect(sonuc.gerekliYesilArtisPuaniGosterim).toBeCloseTo(176, 5);
+    expect(sonuc.sliderAraligindaMi).toBe(false);
   });
 });

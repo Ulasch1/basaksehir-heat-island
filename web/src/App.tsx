@@ -20,6 +20,7 @@ import {
   tipolojiEtiketEslemesiTure,
   hucreIcindekiSiteyiBul,
   siteMahalleyleKesisiyorMu,
+  hesaplaHedefRiskCozumu,
   type MahalleVeri,
   type MahalleSkoru,
   type ProjeksiyonRiski,
@@ -28,7 +29,7 @@ import {
   type TipolojiEtiketleme,
   type BirlesikSenaryoSonucu,
 } from './skorHesapla';
-import { simuleYesilAlan, simuleNufus, secBudceKisitli } from './skor';
+import { simuleYesilAlan, simuleNufus } from './skor';
 import type { MahalleGirdi, TehlikeAgirliklari } from './skor';
 import { izgaraGetir, type IzgaraHucre } from './veriKaynagi';
 import { baglamGetir, type BaglamVerisi } from './veriKaynagi';
@@ -39,8 +40,6 @@ import DetayPaneli from './bilesenler/DetayPaneli';
 import Simulasyon from './bilesenler/Simulasyon';
 import MahalleArama from './bilesenler/MahalleArama';
 import ImarHesaplayici from './bilesenler/ImarHesaplayici';
-
-const BOS_BUTCE_SETI = new Set<string>();
 
 export default function App() {
   const veriKaynagi = useMemo(() => varsayilanVeriKaynagi(), []);
@@ -53,7 +52,6 @@ export default function App() {
 
   const [simYesil, setSimYesil] = useState(0);
   const [simNufusYuzde, setSimNufusYuzde] = useState(0);
-  const [simButce, setSimButce] = useState(3);
   const [siralamaModu, setSiralamaModu] = useState<SiralamaModu>('risk');
 
   const [izgaraGoster, setIzgaraGoster] = useState(false);
@@ -64,6 +62,7 @@ export default function App() {
   const [baglamVeri, setBaglamVeri] = useState<BaglamVerisi | null>(null);
   const [aktifSekme, setAktifSekme] = useState<'inceleme' | 'senaryo'>('inceleme');
   const [simHedef, setSimHedef] = useState<'mahalle' | 'hucre'>('mahalle');
+  const [hedefRisk, setHedefRisk] = useState(ayarlar.renk_esikleri.dusuk);
 
   const senaryoAktif = aktifSekme === 'senaryo';
 
@@ -354,6 +353,17 @@ export default function App() {
     );
   }, [seciliMahalle, seciliSkor, simYesil, agirliklar]);
 
+  const hedefRiskSonuc = useMemo(() => {
+    if (!seciliMahalle || !seciliSkor) return null;
+    return hesaplaHedefRiskCozumu(
+      { yesilAlanOrani: seciliMahalle.yesil_alan_orani, binaYogunlugu: seciliMahalle.bina_yogunlugu },
+      seciliSkor.maruziyet,
+      hedefRisk,
+      ayarlar.simulasyon_bina_azaltma_katsayisi,
+      agirliklar,
+    );
+  }, [seciliMahalle, seciliSkor, hedefRisk, agirliklar]);
+
   // Izgara sim aktifken TUM alt modlarda (tek hucre secili VEYA hicbiri secili
   // degilken butun izgaraya "en kotu once" dagitimi) panel riski izgaraKatmani.
   // hucreOzellikleri'nden (yani haritada gorunen ayni simule edilmis hucre
@@ -412,20 +422,6 @@ export default function App() {
     return hesaplaBirlesikSenaryoSonucu(efektifYesilSimSonuc.tehlike, nufusSimSonuclari, seciliAd);
   }, [simYesil, simNufusYuzde, efektifYesilSimSonuc, nufusSimSonuclari, seciliAd]);
 
-  const butceSonuc = useMemo(() => {
-    if (mevcutSkorlar.length === 0) return { secilenler: [] as number[], kapsananRiskYuzdesi: 0 };
-    return secBudceKisitli(mevcutSkorlar, simButce);
-  }, [mevcutSkorlar, simButce]);
-
-  const butceSecilenAdlari = useMemo<Set<string>>(() => {
-    const set = new Set<string>();
-    for (const idx of butceSonuc.secilenler) {
-      const ad = mevcutSkorlar[idx]?.ad;
-      if (ad) set.add(ad);
-    }
-    return set;
-  }, [butceSonuc, mevcutSkorlar]);
-
   const tipolojiGuncelDegil = !tipoloji || !tipoloji.guncel;
   const projeksiyonGuncelDegil = !projeksiyon || !projeksiyon.guncel;
 
@@ -436,13 +432,6 @@ export default function App() {
     }
     return map;
   }, [mevcutSkorlar]);
-
-  const butceSecilenListesi = useMemo(() => {
-    return butceSonuc.secilenler.map((originalIdx, rankIdx) => {
-      const s = mevcutSkorlar[originalIdx];
-      return { ad: s.ad, rank: rankIdx + 1, risk: s.risk };
-    });
-  }, [butceSonuc, mevcutSkorlar]);
 
   const onAktifSekmeChange = (sekme: 'inceleme' | 'senaryo') => {
     setAktifSekme((mevcut) => {
@@ -520,8 +509,6 @@ export default function App() {
           onSecim={onSecim}
           onHucreSecim={onHucreSecim}
           seciliHucreIndex={seciliHucreIndex}
-          butceSecilenAdlari={senaryoAktif ? butceSecilenAdlari : BOS_BUTCE_SETI}
-          butceGorunumuAktif={senaryoAktif}
           simulasyonOnizlemeAktif={senaryoAktif && (simYesil > 0 || simNufusYuzde !== 0)}
           izgaraKatmani={izgaraKatmani}
           baglamVeri={baglamVeri}
@@ -610,10 +597,10 @@ export default function App() {
                   seciliBaseRank={seciliRank}
                   simNufusYuzde={simNufusYuzde}
                   onSimNufusYuzdeChange={setSimNufusYuzde}
-                  simButce={simButce}
-                  onSimButceChange={setSimButce}
-                  butceKapsananRiskYuzdesi={butceSonuc.kapsananRiskYuzdesi}
-                  butceSecilenler={butceSecilenListesi}
+                  hedefRisk={hedefRisk}
+                  onHedefRiskChange={setHedefRisk}
+                  hedefRiskSonuc={hedefRiskSonuc}
+                  varsayilanHedefRisk={ayarlar.renk_esikleri.dusuk}
                 />
               )}
               <ImarHesaplayici

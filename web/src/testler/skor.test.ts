@@ -8,6 +8,7 @@ import {
   secBudceKisitli,
   hesaplaGerekliYesilAlanOrani,
   maruziyetYeniMahalleyleHesapla,
+  hesaplaGerekliArtisPuani,
 } from '../skor';
 import type { MahalleGirdi, Skorlar, GerekliYesilAlanSonucu } from '../skor';
 
@@ -315,5 +316,45 @@ describe('Yeni hesaplaGerekliYesilAlanOrani ve maruziyetYeniMahalleyleHesapla te
   it('maruziyetYeniMahalleyleHesapla: bos diziye ekleme -> 1 doner', () => {
     const sonuc = maruziyetYeniMahalleyleHesapla([], 250);
     expect(sonuc).toBe(1);
+  });
+});
+
+describe('hesaplaGerekliArtisPuani', () => {
+  it('kirilmasiz cozum: yesil 0.2, bina 0.6, hedef 0.6, katsayi 0.5 -> ~13.333, ileri modelle tutarli', () => {
+    const sonuc = hesaplaGerekliArtisPuani({ yesilAlanOrani: 0.2, binaYogunlugu: 0.6 }, 0.6, 0.5);
+    expect(sonuc.mumkun).toBe(true);
+    expect(sonuc.gerekliArtisPuani).toBeCloseTo(40 / 3, 5); // 13.333...
+
+    const sim = simuleYesilAlan(
+      { ad: 'Test', yesilAlanOrani: 0.2, binaYogunlugu: 0.6, maruziyet: 1 },
+      sonuc.gerekliArtisPuani!,
+      0.5
+    );
+    expect(sim.tehlike).toBeCloseTo(0.6, 5);
+  });
+
+  it('kirilma noktasindan sonra: yesil 0.95, bina 0.5, hedef 0.1, katsayi 0.5 -> ~60, ileri modelle tutarli', () => {
+    const sonuc = hesaplaGerekliArtisPuani({ yesilAlanOrani: 0.95, binaYogunlugu: 0.5 }, 0.1, 0.5);
+    expect(sonuc.mumkun).toBe(true);
+    expect(sonuc.gerekliArtisPuani).toBeCloseTo(60, 5);
+
+    const sim = simuleYesilAlan(
+      { ad: 'Test', yesilAlanOrani: 0.95, binaYogunlugu: 0.5, maruziyet: 1 },
+      sonuc.gerekliArtisPuani!,
+      0.5
+    );
+    expect(sim.tehlike).toBeCloseTo(0.1, 5);
+  });
+
+  it('ulasilamaz durum: yesil 0.9, bina 0.8, hedef 0.2, katsayi 0 -> mumkun false', () => {
+    const sonuc = hesaplaGerekliArtisPuani({ yesilAlanOrani: 0.9, binaYogunlugu: 0.8 }, 0.2, 0);
+    expect(sonuc.mumkun).toBe(false);
+    expect(sonuc.gerekliArtisPuani).toBeNull();
+  });
+
+  it('zaten altinda: yesil 0.8, bina 0.2, hedef 0.9 -> mumkun true, puan 0', () => {
+    const sonuc = hesaplaGerekliArtisPuani({ yesilAlanOrani: 0.8, binaYogunlugu: 0.2 }, 0.9, 0.5);
+    expect(sonuc.mumkun).toBe(true);
+    expect(sonuc.gerekliArtisPuani).toBe(0);
   });
 });

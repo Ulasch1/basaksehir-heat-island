@@ -25,10 +25,6 @@ interface HaritaProps {
   onSecim: (ad: string) => void;
   onHucreSecim: (index: number) => void;
   seciliHucreIndex: number | null;
-  butceSecilenAdlari: Set<string>;
-  /** Bütçe kısıtı UI'sı artık Senaryo sekmesinde, bu yüzden alttaki açıklama metni
-   * sadece o sekme aktifken gösterilir. */
-  butceGorunumuAktif: boolean;
   /** Secili mahallede yesil alan/nufus simulasyonlarindan biri aktifken true.
    * Serbest mod ile simulasyon onizlemesini haritada gorsel olarak ayirmak icin. */
   simulasyonOnizlemeAktif: boolean;
@@ -53,8 +49,6 @@ export default function Harita({
   onSecim,
   onHucreSecim,
   seciliHucreIndex,
-  butceSecilenAdlari,
-  butceGorunumuAktif,
   simulasyonOnizlemeAktif,
   izgaraKatmani,
   baglamVeri,
@@ -278,10 +272,9 @@ export default function Harita({
   );
 
   const geoJsonKey = useMemo(() => {
-    const budgetList = [...butceSecilenAdlari].sort().join(',');
     const izgaraAd = izgaraKatmani ? izgaraKatmani.ad : '';
-    return `${seciliAd ?? '-'}__${budgetList}__${izgaraAd}__${renkGoster}__${simulasyonOnizlemeAktif}`;
-  }, [seciliAd, butceSecilenAdlari, izgaraKatmani, renkGoster, simulasyonOnizlemeAktif]);
+    return `${seciliAd ?? '-'}__${izgaraAd}__${renkGoster}__${simulasyonOnizlemeAktif}`;
+  }, [seciliAd, izgaraKatmani, renkGoster, simulasyonOnizlemeAktif]);
 
   const izgaraGeoJsonKey = useMemo(() => {
     if (!izgaraKatmani) return '';
@@ -302,7 +295,6 @@ export default function Harita({
       const risk = skor?.risk ?? 0;
 
       const isSelected = ad === seciliAd;
-      const inBudget = ad ? butceSecilenAdlari.has(ad) : false;
       // Simulasyon onizlemesi SADECE secili mahallede ve SADECE gorunumu etkiler:
       // gercek risk (skorlarByAd) degismez, sadece bu mahallenin haritadaki dolgu/
       // kontur rengi "serbest mod" risk paletinden cikip ayri bir simulasyon
@@ -314,15 +306,12 @@ export default function Harita({
         ? SIMULASYON_RENGI.dolgu
         : riskRengi(risk, renkEsikleri);
 
-      const weight = isSelected ? 2.5 : inBudget ? 2 : 1;
+      const weight = isSelected ? 2.5 : 1;
       const color = simulasyonOnizlemesi
         ? SIMULASYON_RENGI.kontur
         : isSelected
           ? 'oklch(0.55 0.15 150)'
-          : inBudget
-            ? 'oklch(0.6 0.14 150)'
-            : 'oklch(0.85 0.01 260)';
-      const dashArray = inBudget && !isSelected ? '6,3' : undefined;
+          : 'oklch(0.85 0.01 260)';
 
       // Renk kapatıldığında (yol/altlık görmek için) dolgu tamamen şeffaf, sadece
       // kontur kalır. Renk açıkken, bir mahalle seçiliyse diğerlerinin dolgusu
@@ -335,10 +324,9 @@ export default function Harita({
         fillOpacity,
         weight,
         color,
-        dashArray,
       };
     },
-    [skorlarByAd, renkEsikleri, seciliAd, butceSecilenAdlari, renkGoster, simulasyonOnizlemeAktif],
+    [skorlarByAd, renkEsikleri, seciliAd, renkGoster, simulasyonOnizlemeAktif],
   );
 
   const onEachFeature = useMemo(
@@ -527,8 +515,7 @@ export default function Harita({
         )}
       </div>
 
-      <div className="text-[10px] text-muted mt-1 flex justify-between flex-shrink-0">
-        <span>{butceGorunumuAktif ? 'Kesikli kontur: bütçe kısıtında seçilen mahalleler' : ''}</span>
+      <div className="text-[10px] text-muted mt-1 flex justify-end flex-shrink-0">
         <span>© OpenStreetMap katkıcıları (ODbL) · TÜİK ADNKS</span>
       </div>
 
