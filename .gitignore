@@ -37,6 +37,9 @@ web/public/
 # Office gecici kilit dosyalari
 ~$*
 
+# Claude Code yerel ayarlari
+.claude/
+
 # Isletim sistemi
 Thumbs.db
 .DS_Store
